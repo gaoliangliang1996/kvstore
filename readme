@@ -1,0 +1,8 @@
+本项目计划实现一个key value存储的功能
+使用LSM架构：（需参考 leveldb）
+  1. WAL 预写日志
+  2. MemTable 内存表
+  3. SSTable 磁盘文件
+  4. Compaction 合并
+
+使用跳表数据结构来存储值。
