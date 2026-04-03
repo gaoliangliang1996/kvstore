@@ -1,0 +1,4 @@
+/home/gao/kvstore/build/CMakeFiles/kvstore.dir
+/home/gao/kvstore/build/CMakeFiles/kvstore_test.dir
+/home/gao/kvstore/build/CMakeFiles/edit_cache.dir
+/home/gao/kvstore/build/CMakeFiles/rebuild_cache.dir
