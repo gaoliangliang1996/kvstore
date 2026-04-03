@@ -132,4 +132,6 @@ set(CMAKE_MAKEFILE_PRODUCTS
 set(CMAKE_DEPEND_INFO_FILES
   "CMakeFiles/kvstore.dir/DependInfo.cmake"
   "CMakeFiles/kvstore_test.dir/DependInfo.cmake"
+  "CMakeFiles/parse_sstable.dir/DependInfo.cmake"
+  "CMakeFiles/parse_wal.dir/DependInfo.cmake"
   )

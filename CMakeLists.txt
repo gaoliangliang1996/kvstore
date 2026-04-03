@@ -28,6 +28,18 @@ add_library(kvstore STATIC ${SOURCES})
 add_executable(kvstore_test test/test.cpp)
 target_link_libraries(kvstore_test kvstore ${ZLIB_LIBRARIES} pthread)
 
+# 解析 SSTable
+add_executable(parse_sstable tools/parse_sstable.cpp)
+target_link_libraries(parse_sstable z)
+
+# 解析 WAL
+add_executable(parse_wal tools/parse_wal.cpp)
+target_link_libraries(parse_wal z)
+
+# # 通用解析器
+# add_executable(parse_all tools/parse_all.cpp tools/parse_sstable.cpp tools/parse_wal.cpp)
+# target_link_libraries(parse_all z)
+
 # # 安装
 # install(TARGET kvstore DESTINATION lib)
 # install(DIRECTORY include/ DESTINATION include)

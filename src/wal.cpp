@@ -5,24 +5,43 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <iostream>
 
 // 编码格式：CRC32(4) + Type(1) + KeyLen(4) + ValLen(4) + Key + Value
 namespace kvstore {
 
-WAL::WAL(const string& path) : filename(path) {
-    file.open(path, std::ios::binary | std::ios::in | std::ios::out | std::ios::app); // 以读写模式打开文件，如果文件不存在则创建
+WAL::WAL(const string& path) : fd(-1), filename(path), offset(0) {
+    fd = open(path.c_str(), O_RDWR | O_CREAT | O_APPEND, 0644);
 
-    if (!file.is_open()) { // 如果文件打开失败，尝试创建文件
-        file.open(path, std::ios::binary | std::ios::out); // 创建文件
-        file.close(); // 关闭后再以读写模式打开
-        file.open(path, std::ios::binary | std::ios::in | std::ios::out | std::ios::app); // 以读写模式打开文件
+    if (fd < 0) {
+        std::cerr << "Failed to open wal file" << path << std::endl;
+        return;
+    }
+
+    // 检查文件是否为空 （新文件）
+    struct stat st;
+    if (fstat(fd, &st) == 0 && st.st_size == 0) {
+        // 写入文件头 magic(4) + version(4)
+        uint32_t magic = 0xABCD1234;
+        uint32_t version = 1;
+        write(fd, &magic, 4);
+        write(fd, &version, 4);
+        fsync(fd);
+        offset = 0;
+    }
+    else {
+        // 获取当前大小
+        offset = lseek(fd, 0, SEEK_END);
+        std::cout << "[WAL] opened " << path << " , fd = " << fd << " , size = " << offset << std::endl;
     }
 }
 
+
 WAL::~WAL() {
-    if (file.is_open()) {
+    if (fd > 0) {
         sync();
-        file.close();
+        close(fd);
+        std::cout << "[WAL] closed" << filename << std::endl;
     }
 }
 
@@ -87,16 +106,25 @@ uint32_t WAL::calculateCRC(const string& data) {
 
 bool WAL::append(const Record& rec) {
     string encoded = encodeRecord(rec);
-    file.write(encoded.data(), encoded.size());
-    return file.good(); // 检查写入是否成功
+
+    ssize_t written = write(fd, encoded.data(), encoded.size());
+    if (written != static_cast<ssize_t>(encoded.size())) {
+        std::cerr << "[WAL] write failed" << std::endl;
+        return false;
+    }
+
+    offset += written;
+    return true;
 }
 
 bool WAL::recover(std::function<bool (const Record&)> callback) {
-    file.seekg(0, std::ios::beg); // 从文件开头开始读取
+    lseek(fd, 8, SEEK_SET); // 跳过文件头
 
     string buffer;
     char ch;
-    while (file.get(ch)) {
+    ssize_t n;
+
+    while ((n = read(fd, &ch, 1) > 0)) { // 为什么每次只读一字节？因为我们不知道每条记录的长度，必须逐字节读取直到能成功解析出一条完整的记录
         buffer.push_back(ch);
 
         Record rec;
@@ -112,38 +140,19 @@ bool WAL::recover(std::function<bool (const Record&)> callback) {
 }
 
 void WAL::sync() {
-    file.flush();
-    
-    // 获取文件描述符的正确方法
-    int fd = -1;
-    
-    // 方法1：通过标准库的 native_handle （如果可用）
-    // 方法2：重新打开文件获取 fd
-    // 这里使用最简单的方法：关闭并重新打开来强制同步
-    
-    // 实际上，file.rdbuf()->pubsync() 已经做了同步
-    // 但为了确保数据真正落盘，我们可以用更直接的方法
-    
-    // 获取当前文件路径，重新打开获取 fd
-    file.close();
-    
-    // 以只读方式打开只是为了获取 fd 并调用 fsync
-    int temp_fd = open(filename.c_str(), O_RDONLY);
-    if (temp_fd >= 0) {
-        fsync(temp_fd);
-        close(temp_fd);
+    if (fd >= 0) {
+        fsync(fd);
+        std::cout << "[WAL] synced" << std::endl;
     }
-    
-    // 重新打开文件
-    file.open(filename, std::ios::binary | std::ios::in | std::ios::out | std::ios::app);
 }
 
-// 截断日志文件，通常在 checkpoint 后调用
 void WAL::truncate() {
-    file.close(); // 关闭文件
-    file.open(filename, std::ios::binary | std::ios::out | std::ios::trunc); // 以截断模式打开文件，清空内容
-    file.close(); // 关闭后再以读写模式打开
-    file.open(filename, std::ios::binary  | std::ios::in | std::ios::out | std::ios::app); // 以读写模式打开文件
+    if (fd >= 0) {
+        ftruncate(fd, 8); // 截断文件
+        lseek(fd, 8, SEEK_SET); // 移动文件指针到开头
+        offset = 8;
+        sync();
+    }
 }
 
 

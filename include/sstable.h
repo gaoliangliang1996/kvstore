@@ -14,7 +14,7 @@ private:
     };
 
     string filename;
-    std::fstream file;
+    int fd;
     std::vector<string> keys;       // 索引：所有 key
     std::vector<uint64_t> offsets;  // 索引：每个 key 对应的 offset
 

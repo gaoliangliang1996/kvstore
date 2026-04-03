@@ -7,7 +7,8 @@ namespace kvstore {
 
 class WAL {
 private:
-    std::fstream file;
+    int fd;
+    uint64_t offset;
     string filename;
 
     // 编码格式：CRC32(4) + Type(1) + KeyLen(4) + ValLen(4) + Key + Value

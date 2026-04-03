@@ -142,6 +142,32 @@ kvstore_test/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/kvstore_test.dir/build.make CMakeFiles/kvstore_test.dir/build
 .PHONY : kvstore_test/fast
 
+#=============================================================================
+# Target rules for targets named parse_sstable
+
+# Build rule for target.
+parse_sstable: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 parse_sstable
+.PHONY : parse_sstable
+
+# fast build rule for target.
+parse_sstable/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/parse_sstable.dir/build.make CMakeFiles/parse_sstable.dir/build
+.PHONY : parse_sstable/fast
+
+#=============================================================================
+# Target rules for targets named parse_wal
+
+# Build rule for target.
+parse_wal: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 parse_wal
+.PHONY : parse_wal
+
+# fast build rule for target.
+parse_wal/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/parse_wal.dir/build.make CMakeFiles/parse_wal.dir/build
+.PHONY : parse_wal/fast
+
 src/kvstore.o: src/kvstore.cpp.o
 .PHONY : src/kvstore.o
 
@@ -238,6 +264,54 @@ test/test.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/kvstore_test.dir/build.make CMakeFiles/kvstore_test.dir/test/test.cpp.s
 .PHONY : test/test.cpp.s
 
+tools/parse_sstable.o: tools/parse_sstable.cpp.o
+.PHONY : tools/parse_sstable.o
+
+# target to build an object file
+tools/parse_sstable.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/parse_sstable.dir/build.make CMakeFiles/parse_sstable.dir/tools/parse_sstable.cpp.o
+.PHONY : tools/parse_sstable.cpp.o
+
+tools/parse_sstable.i: tools/parse_sstable.cpp.i
+.PHONY : tools/parse_sstable.i
+
+# target to preprocess a source file
+tools/parse_sstable.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/parse_sstable.dir/build.make CMakeFiles/parse_sstable.dir/tools/parse_sstable.cpp.i
+.PHONY : tools/parse_sstable.cpp.i
+
+tools/parse_sstable.s: tools/parse_sstable.cpp.s
+.PHONY : tools/parse_sstable.s
+
+# target to generate assembly for a file
+tools/parse_sstable.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/parse_sstable.dir/build.make CMakeFiles/parse_sstable.dir/tools/parse_sstable.cpp.s
+.PHONY : tools/parse_sstable.cpp.s
+
+tools/parse_wal.o: tools/parse_wal.cpp.o
+.PHONY : tools/parse_wal.o
+
+# target to build an object file
+tools/parse_wal.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/parse_wal.dir/build.make CMakeFiles/parse_wal.dir/tools/parse_wal.cpp.o
+.PHONY : tools/parse_wal.cpp.o
+
+tools/parse_wal.i: tools/parse_wal.cpp.i
+.PHONY : tools/parse_wal.i
+
+# target to preprocess a source file
+tools/parse_wal.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/parse_wal.dir/build.make CMakeFiles/parse_wal.dir/tools/parse_wal.cpp.i
+.PHONY : tools/parse_wal.cpp.i
+
+tools/parse_wal.s: tools/parse_wal.cpp.s
+.PHONY : tools/parse_wal.s
+
+# target to generate assembly for a file
+tools/parse_wal.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/parse_wal.dir/build.make CMakeFiles/parse_wal.dir/tools/parse_wal.cpp.s
+.PHONY : tools/parse_wal.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -248,6 +322,8 @@ help:
 	@echo "... rebuild_cache"
 	@echo "... kvstore"
 	@echo "... kvstore_test"
+	@echo "... parse_sstable"
+	@echo "... parse_wal"
 	@echo "... src/kvstore.o"
 	@echo "... src/kvstore.i"
 	@echo "... src/kvstore.s"
@@ -260,6 +336,12 @@ help:
 	@echo "... test/test.o"
 	@echo "... test/test.i"
 	@echo "... test/test.s"
+	@echo "... tools/parse_sstable.o"
+	@echo "... tools/parse_sstable.i"
+	@echo "... tools/parse_sstable.s"
+	@echo "... tools/parse_wal.o"
+	@echo "... tools/parse_wal.i"
+	@echo "... tools/parse_wal.s"
 .PHONY : help
 
 

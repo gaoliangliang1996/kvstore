@@ -1,0 +1,1 @@
+/usr/bin/c++  -Wall -O0 -pthread -g CMakeFiles/parse_wal.dir/tools/parse_wal.cpp.o -o parse_wal  -lz 

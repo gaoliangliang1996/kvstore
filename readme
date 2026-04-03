@@ -28,3 +28,14 @@ WAL 的文件格式
 │ ...                                                  │
 └─────────────────────────────────────────────────────┘
 
+使用方法：
+mkdir -p build; cmake ..; make;
+./kvstore_test
+
+会得到 test_data 目录
+目录下有 wal.log 和 0.sst 1.sst ...
+
+解析文件
+./parse_wal test_data/wal.log
+./parse_sstable test_data/0.sst
+./parse_sstable test_data/1.sst

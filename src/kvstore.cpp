@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <fstream>
 #include <algorithm>
+#include <iostream>
 
 namespace kvstore {
     
@@ -58,6 +59,7 @@ Status KVStore::put(const string& key, const string& value) {
     // 1. 写 WAL
     Record rec{Optype::PUT, key, value};
     if (!wal->append(rec)) {
+        std::cout << "error";
         return Status::IO_ERROR;
     }
 

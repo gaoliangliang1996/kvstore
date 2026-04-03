@@ -1,0 +1,45 @@
+一、核心功能完善（高优先级）
+1. Compaction（合并）
+当前 SSTable 只增不减，删除的记录会留下墓碑标记。
+
+cpp
+class Compaction {
+    void merge_sstables(vector<string>& sst_files);
+    void do_compaction();
+    // Level 0 -> Level 1 -> Level 2 分层合并
+};
+2. MemTable 切换
+当前 flush 会阻塞写入，需要双 MemTable 设计：
+
+cpp
+class MemTableManager {
+    SkipList* active_memtable;     // 当前写入
+    SkipList* immutable_memtable;   // 等待 flush
+    void switch_memtable();
+};
+3. Bloom Filter
+避免无效的 SSTable 读取：
+
+cpp
+class BloomFilter {
+    std::vector<bool> bits;
+    int hash_count;
+    void add(const string& key);
+    bool may_contain(const string& key);
+};
+4. Block Cache
+缓存热数据，减少磁盘 I/O：
+
+cpp
+class LRUCache {
+    struct Node { string key, value; };
+    std::list<Node> lru_list;
+    std::unordered_map<string, list<Node>::iterator> cache_map;
+    size_t max_size;
+};
+
+RAFT 协议实现（中优先级）
+1. Leader Election（领导者选举）
+2. Log Replication（日志复制）
+3. Safety（安全性保证）
+4. Membership Changes（成员变更）

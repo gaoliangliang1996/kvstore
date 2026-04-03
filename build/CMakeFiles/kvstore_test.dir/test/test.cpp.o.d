@@ -1,7 +1,8 @@
 CMakeFiles/kvstore_test.dir/test/test.cpp.o: \
  /home/gao/kvstore/test/test.cpp /usr/include/stdc-predef.h \
- /home/gao/kvstore/include/kvstore.h /home/gao/kvstore/include/common.h \
- /usr/include/c++/13/string /usr/include/c++/13/bits/requires_hosted.h \
+ /home/gao/kvstore/test/../include/kvstore.h \
+ /home/gao/kvstore/test/../include/common.h /usr/include/c++/13/string \
+ /usr/include/c++/13/bits/requires_hosted.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
  /usr/include/features.h /usr/include/features-time64.h \
@@ -156,7 +157,7 @@ CMakeFiles/kvstore_test.dir/test/test.cpp.o: \
  /usr/include/c++/13/backward/auto_ptr.h \
  /usr/include/c++/13/pstl/glue_memory_defs.h \
  /usr/include/c++/13/pstl/execution_defs.h \
- /home/gao/kvstore/include/skiplist.h /usr/include/c++/13/atomic \
+ /home/gao/kvstore/test/../include/skiplist.h /usr/include/c++/13/atomic \
  /usr/include/c++/13/random /usr/include/c++/13/cmath /usr/include/math.h \
  /usr/include/x86_64-linux-gnu/bits/math-vector.h \
  /usr/include/x86_64-linux-gnu/bits/libm-simd-decl-stubs.h \
@@ -186,7 +187,7 @@ CMakeFiles/kvstore_test.dir/test/test.cpp.o: \
  /usr/include/c++/13/bits/random.tcc /usr/include/c++/13/numeric \
  /usr/include/c++/13/bits/stl_numeric.h \
  /usr/include/c++/13/pstl/glue_numeric_defs.h \
- /home/gao/kvstore/include/wal.h /usr/include/c++/13/fstream \
+ /home/gao/kvstore/test/../include/wal.h /usr/include/c++/13/fstream \
  /usr/include/c++/13/istream /usr/include/c++/13/ios \
  /usr/include/c++/13/bits/ios_base.h \
  /usr/include/c++/13/bits/locale_classes.h \
@@ -218,9 +219,9 @@ CMakeFiles/kvstore_test.dir/test/test.cpp.o: \
  /usr/include/c++/13/bits/erase_if.h /usr/include/c++/13/array \
  /usr/include/c++/13/compare /usr/include/c++/13/bits/stl_algo.h \
  /usr/include/c++/13/bits/algorithmfwd.h \
- /usr/include/c++/13/bits/stl_heap.h /home/gao/kvstore/include/sstable.h \
- /usr/include/c++/13/map /usr/include/c++/13/bits/stl_tree.h \
- /usr/include/c++/13/bits/stl_map.h \
+ /usr/include/c++/13/bits/stl_heap.h \
+ /home/gao/kvstore/test/../include/sstable.h /usr/include/c++/13/map \
+ /usr/include/c++/13/bits/stl_tree.h /usr/include/c++/13/bits/stl_map.h \
  /usr/include/c++/13/bits/stl_multimap.h /usr/include/c++/13/thread \
  /usr/include/c++/13/bits/std_thread.h \
  /usr/include/c++/13/bits/this_thread_sleep.h \

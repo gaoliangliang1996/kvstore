@@ -12,45 +12,59 @@
 #include <sstable.h>
 #include <cstring>
 #include <algorithm>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+
 
 namespace kvstore {
 
 SSTable::SSTable(const string& path) : filename(path) {
-    file.open(path, std::ios::binary | std::ios::in | std::ios::out); // 以读写模式打开文件，如果文件不存在则创建
-    if (file.is_open()) {
+    fd = open(path.c_str(), O_RDWR | O_CREAT, 0644); // 以读写模式打开文件，如果文件不存在则创建
+    if (fd >= 0) {
         buildIndex();
     }
 }
 
 SSTable::~SSTable() {
-    if (file.is_open()) {
-        file.close();
+    if (fd >= 0) {
+        close(fd); // 关闭文件描述符
     }
 }
 
 // 构建索引：读取文件，解析每条记录，提取 key 和对应的 offset
 void SSTable::buildIndex() {
-    file.seekg(0, std::ios::end); // 移动到文件末尾
-    uint64_t file_size = file.tellg(); // 获取文件大小
-    file.seekg(0, std::ios::beg); // 移动回文件开头
+    struct stat st;
+    if (fstat(fd, &st) != 0) {
+        return;
+    }
+    uint64_t file_size = st.st_size;
 
     uint64_t offset = 0;
     while (offset < file_size) { // 循环读取每条记录，直到文件末尾
         // 读取记录长度
         uint32_t rec_len;
-        file.seekg(offset); // 移动到当前记录的起始位置
-        file.read(reinterpret_cast<char*>(&rec_len), 4); // 读取记录长度（4 字节）
+        ssize_t n = pread(fd, &rec_len, 4, offset); // 直接使用 pread 从指定 offset 位置读取数据
+        if (n != 4) {
+            break; // 读取失败或文件末尾
+        }
 
-        if (file.eof())
-            break;
+        if (rec_len == 0 || rec_len > 1024 * 1024) {
+            break; // 记录长度为 0，可能是文件末尾
+        }
 
         // 读取完整记录
         string record(rec_len, '\0');
-        file.read(&record[0], rec_len);
+        n = pread(fd, &record[0], rec_len, offset + 4);
+        if (n != static_cast<ssize_t>(rec_len)) {
+            break; // 读取失败
+        }
 
         // 解析 key
         uint32_t key_len;
         memcpy(&key_len, record.data(), 4);
+
         string key = record.substr(4, key_len);
 
         keys.push_back(key);
@@ -63,13 +77,22 @@ void SSTable::buildIndex() {
 // 写入数据：将记录数据写入文件，并返回记录的 offset
 // 文件中的格式为：len + data
 uint64_t SSTable::writeData(const string& data) {
-    file.seekp(0, std::ios::end); // 移动到文件末尾
-    uint64_t offset = file.tellp(); // 获取当前写入位置的 offset
-
+    // 移动到文件末尾
+    uint64_t offset = lseek(fd, 0, SEEK_END);
+    if (offset == (uint64_t)-1) { // lseek 失败
+        return 0;
+    }
+    
     uint32_t len = data.size();
-    file.write(reinterpret_cast<const char*>(&len), 4); // 写入记录长度
-    file.write(data.data(), data.size()); // 写入记录数据
-
+    
+    // 写入记录长度
+    ssize_t n = write(fd, &len, 4);
+    if (n != 4) return 0;
+    
+    // 写入记录数据
+    n = write(fd, data.data(), data.size());
+    if (n != (ssize_t)data.size()) return 0;
+    
     return offset;
 }
 
@@ -92,30 +115,42 @@ bool SSTable::put(const string& key, const string& value) {
 }
 
 bool SSTable::get(const string& key, string& value) {
+    if (fd < 0) return false;
+    
     // 二分查找 key
-    auto it = std::lower_bound(keys.begin(), keys.end(), key); // 使用二分查找定位 key 的位置
+    auto it = std::lower_bound(keys.begin(), keys.end(), key);
     if (it == keys.end() || *it != key) {
         return false;
     }
     
     size_t idx = it - keys.begin();
-    file.seekg(offsets[idx]); // 移动到对应记录的 offset
+    uint64_t offset = offsets[idx];
     
+    // 读取记录长度
     uint32_t rec_len;
-    file.read(reinterpret_cast<char*>(&rec_len), 4); // 读取记录长度
+    ssize_t n = pread(fd, &rec_len, 4, offset);
+    if (n != 4) return false;
     
+    // 读取记录
     string record(rec_len, '\0');
-    file.read(&record[0], rec_len); // 读取完整记录
+    n = pread(fd, &record[0], rec_len, offset + 4);
+    if (n != rec_len) return false;
     
     // 解析 value
-    uint32_t key_len = record.size() > 4 ? *reinterpret_cast<uint32_t*>(&record[0]) : 0; // 解析 KeyLen
-    if (record.size() > 4 + key_len + 4) {
-        uint32_t val_len = *reinterpret_cast<uint32_t*>(&record[4 + key_len]); // 解析 ValLen
-        value = record.substr(4 + key_len + 4, val_len); // 提取 value
-        return true;
-    }
+    if (record.size() < 8) return false;
     
-    return false;
+    uint32_t key_len;
+    memcpy(&key_len, record.data(), 4);
+    
+    if (record.size() < 4 + key_len + 4) return false;
+    
+    uint32_t val_len;
+    memcpy(&val_len, record.data() + 4 + key_len, 4);
+    
+    if (record.size() < 4 + key_len + 4 + val_len) return false;
+    
+    value = record.substr(4 + key_len + 4, val_len);
+    return true;
 }
 
 bool SSTable::del(const string& key) {
