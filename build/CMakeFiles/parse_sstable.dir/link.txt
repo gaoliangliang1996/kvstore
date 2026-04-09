@@ -1,1 +1,0 @@
-/usr/bin/c++  -Wall -O0 -pthread -g CMakeFiles/parse_sstable.dir/tools/parse_sstable.cpp.o -o parse_sstable  -lz 

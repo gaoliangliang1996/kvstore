@@ -1,2 +1,0 @@
-/usr/bin/ar qc libkvstore.a CMakeFiles/kvstore.dir/src/kvstore.cpp.o CMakeFiles/kvstore.dir/src/wal.cpp.o CMakeFiles/kvstore.dir/src/sstable.cpp.o
-/usr/bin/ranlib libkvstore.a

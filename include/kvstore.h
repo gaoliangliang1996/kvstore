@@ -3,6 +3,11 @@
 #include "skiplist.h"
 #include "wal.h"
 #include "sstable.h"
+#include "compaction.h"
+#include "memtable_manager.h"
+#include "lru_cache.h"
+#include "bloom_filter.h"
+
 #include <memory>
 #include <vector>
 #include <thread>
@@ -13,15 +18,18 @@ namespace kvstore {
 class KVStore {
 private:
     Config config;
-    SkipList<string, string> memtable;
+    // SkipList<string, string> memtable;
+    std::unique_ptr<MemTableManager> memtable_manager;
+
     std::unique_ptr<WAL> wal;
-    std::vector<std::unique_ptr<SSTable>> sstables;
+    std::vector<std::shared_ptr<SSTable>> sstables;
+    std::unique_ptr<LRUCache> cache;
     
-    std::atomic<size_t> memtable_size;
     std::thread flush_thread;
     std::atomic<bool> running;
 
-    void flushMemtable();
+    std::unique_ptr<Compaction> compaction;
+    void flushMemtable(SkipList<string, string>* memtable);
     void backgroundFlush();
     bool getFromSSTables(const string& key, string& value);
 
@@ -34,6 +42,13 @@ public:
     Status del(const string& key);
 
     void sync();
+
+    struct Stats {
+        size_t cache_hits;
+        size_t cache_misses;
+        size_t bloom_filter_saves;
+    };
+    Stats get_stats();
 };
 
 }

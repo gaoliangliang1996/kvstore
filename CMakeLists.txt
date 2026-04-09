@@ -19,6 +19,10 @@ set(SOURCES
     src/kvstore.cpp
     src/wal.cpp
     src/sstable.cpp
+    src/compaction.cpp
+    src/memtable_manager.cpp
+    src/bloom_filter.cpp
+    src/lru_cache.cpp
 )
 
 # 静态库

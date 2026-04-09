@@ -1,0 +1,24 @@
+Compaction 设计说明
+    1. 目标
+        Compaction 负责将 LSM-Tree 中不同层级的 SSTable 进行归并，通过删除旧版本，过滤 tombstone ，合并重叠范围，减少文件数量和读放大
+    2. 层级模型
+        Level 0 : 使用文件数量阈值触发 Compaction
+            由于 Level 0 文件之间可能存在 key 范围重叠，合并时会把所有 Level 0 文件与 与之范围重叠的 Level 1 文件一起归并
+        Level 1 及以上 : 使用层级总大小阈值触发 Compaction
+            只选择一个本层文件与下一层文件合并
+    3. 主要组件
+        Compaction      管理各层级的 SSTable 列表、合并触发逻辑、后台线程、文件迁移
+        MergeIterator   对多个 SSTable 迭代器进行多路归并，返回按 key 升序排序的流。它负责跳过相同 key 的旧版本，保证同一 key 只返回一次。
+    4. 工作流程
+        后台线程周期性检查 need_compaction()
+        如果满足 compaction 条件， 调用 pick_files_for_compaction() 选取待合并文件
+        调用 do_compaction() 执行合并：
+            (1) 创建 MergeIterator 将本层文件和下一层文件归并
+            (2) 遍历归并结果，过滤 tombstone 并仅保留了最新 key
+            (3) 将合并后数据写入新的 SSTable，写入目标层级
+            (4) 从原层级移除旧的 SSTable
+    5. 并发与一致性
+        使用 mutex 保护 level_files 与 compaction 过程中对文件列表的修改
+        外部写入新 SSTable 时应调用 add_sstable() 该方法也会对当前层级列表加锁
+    6. 可扩展性
+        

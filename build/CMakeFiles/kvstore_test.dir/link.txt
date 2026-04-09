@@ -1,1 +1,0 @@
-/usr/bin/c++  -Wall -O0 -pthread -g CMakeFiles/kvstore_test.dir/test/test.cpp.o -o kvstore_test  libkvstore.a /usr/lib/x86_64-linux-gnu/libz.so -lpthread 

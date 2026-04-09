@@ -114,7 +114,7 @@ bool SSTable::put(const string& key, const string& value) {
     return true;
 }
 
-bool SSTable::get(const string& key, string& value) {
+bool SSTable::get(const string& key, string& value) const {
     if (fd < 0) return false;
     
     // 二分查找 key
@@ -168,5 +168,76 @@ SSTable* SSTable::createFromMemTable(const string& path, std::map<string, string
     }
     return sstable;
 }
+
+// ============== Iterator 实现 ==============
+SSTable::Iterator::Iterator(const SSTable* table, size_t idx) : sstable(table), current_idx(idx) {}
+
+bool SSTable::Iterator::valid() const { return sstable && current_idx < sstable->keys.size(); }
+
+void SSTable::Iterator::next() { if (valid()) current_idx++; }
+
+void SSTable::Iterator::prev() {
+    if (current_idx > 0)
+        current_idx--;
+    else {
+        // 已经达到第一个元素，再往前就设置为无效
+        current_idx = sstable->keys.size(); // 设置为 end() 位置
+    }
+}
+
+void SSTable::Iterator::seek_to_first() {
+    current_idx = 0;
+}
+
+void SSTable::Iterator::seek_to_last() {
+    current_idx = sstable->keys.empty() ? 0 : sstable->keys.size() - 1;
+}
+
+void SSTable::Iterator::seek(const string& target) {
+    // 二分查找第一个 >= target 的位置
+    auto it = std::lower_bound(sstable->keys.begin(), sstable->keys.end(), target);
+    current_idx = it - sstable->keys.begin();
+}
+
+string SSTable::Iterator::key() const {
+    if (!valid())
+        return "";
+
+    return sstable->keys[current_idx];
+}
+
+string SSTable::Iterator::value() const {
+    if (!valid())
+        return "";
+
+    string value;
+    sstable->get(sstable->keys[current_idx], value);
+    return value;
+}
+
+uint64_t SSTable::Iterator::offset() const {
+    if (!valid())
+        return 0;
+
+    return sstable->offsets[current_idx];
+}
+
+// ============== 迭代器获取 ==============
+
+SSTable::Iterator SSTable::begin() const {
+    return Iterator(this, 0);
+}
+SSTable::Iterator SSTable::end() const {
+    return Iterator(this, keys.size());
+}
+SSTable:: Iterator SSTable::find(const string& key) const {
+    Iterator it = begin();
+    it.seek(key);
+    if (it.valid() && it.key() == key) {
+        return it;
+    }
+    return end();
+}
+
 
 }
