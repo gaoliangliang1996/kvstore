@@ -39,3 +39,38 @@ mkdir -p build; cmake ..; make;
 ./parse_wal test_data/wal.log
 ./parse_sstable test_data/0.sst
 ./parse_sstable test_data/1.sst
+
+========== Parsing WAL: test_data/wal.log ==========
+File size: 6363 bytes
+Magic: 0xabcd1234
+Version: 1
+
+Records:
+-------------------------------------------------------------------------------
+Offset    CRC32       Type    KeyLen      Key                 ValLen    Value
+-------------------------------------------------------------------------------
+8         0xc3b14b46  PUT       8         key_9795            10        value_9795
+39        0xc35a7cfd  PUT       8         key_9796            10        value_9796
+70        0x75d393ab  PUT       8         key_9797            10        value_9797
+101       0x76947afc  PUT       8         key_9798            10        value_9798
+132       0xc01d95aa  PUT       8         key_9799            10        value_9799
+163       0xa2cb005b  PUT       8         key_9800            10        value_9800
+194       0x1442ef0d  PUT       8         key_9801            10        value_9801
+
+gao@node:~/kvstore/build$ ./parse_sstable test_data/0.sst  | less
+
+========== Parsing SSTable: test_data/0.sst ==========
+File size: 8839 bytes
+
+Records:
+-------------------------------------------------------------------------------
+Offset    KeyLen    Key                 ValLen    Value
+-------------------------------------------------------------------------------
+0         3         age                 11        [TOMBSTONE - Deleted]
+26        5         key_0               7         value_0
+50        5         key_1               7         value_1
+74        7         key_101             9         value_101
+102       7         key_103             9         value_103
+130       7         key_104             9         value_104
+158       7         key_105             9         value_105
+186       7         key_106             9         value_106

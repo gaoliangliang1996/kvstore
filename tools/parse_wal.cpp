@@ -57,7 +57,7 @@ void parse_wal(const string& filename) {
     cout << "-------------------------------------------------------------------------------" << endl;
     cout << left << setw(10) << "Offset" 
          << setw(8) << "CRC32" 
-         << setw(8) << "Type" 
+         << setw(14) << "Type" 
          << setw(10) << "KeyLen" 
          << setw(20) << "Key" 
          << setw(10) << "ValLen" 

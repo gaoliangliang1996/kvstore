@@ -15,7 +15,7 @@ private:
         Value value;
         std::vector<std::atomic<Node*>> next;
 
-        Node(const Key& k, const Value& v, int level) : key(k), value(v), next(level + 1)
+        Node(const Key& k, const Value& v, int level) : key(k), value(v), next(level + 1, nullptr)
         {
             // 手动初始化每个 atomic ，避免拷贝构造
             for (int i = 0; i <= level; i++) {
@@ -92,7 +92,7 @@ public:
 
         // 插入新节点
         Node* new_node = new Node(key, value, new_level);
-        for (int i = 0; i <= new_level; i++) {
+        for (int i = 0; i < new_level; i++) {
             new_node->next[i].store(update[i]->next[i].load(std::memory_order_relaxed), std::memory_order_relaxed); // 设置新节点的下一个节点
             update[i]->next[i].store(new_node, std::memory_order_release); // 更新前驱节点的下一个节点指向新节点
         }

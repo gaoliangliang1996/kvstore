@@ -19,18 +19,15 @@ MemTableManager::~MemTableManager() {
 void MemTableManager::put(const string& key, const string& value) {
     {
         std::lock_guard<std::mutex> lock(mutex);
-        // std::cout << "Hold Mutex. put key: " << key << " value: " << value << std::endl;
 
         active_memtable->put(key, value);
         active_size += key.size() + value.size();
-
-        // 检查是否需要切换
-        if (need_switch()) {
-            // std::cout << "need switch memtable" << std::endl;
-            switch_memtable();
-        }
     }
-    // std::cout << "Release Mutex. put key: " << key << " value: " << value << std::endl;
+
+    // 检查是否需要切换
+    if (need_switch()) {
+        switch_memtable();
+    }    
 }
 
 bool MemTableManager::get(const string& key, string& value) {
@@ -63,21 +60,28 @@ void MemTableManager::switch_memtable() {
         wait_flush();
     }
 
-    // 切换 active -> immutable , 创建新的 active
-    immutable_memtable = std::move(active_memtable); // std::move 的作用是将 active_memtable 的所有权转移到 immutable_memtable 中，active_memtable 变为 nullptr。
-    active_memtable = std::make_unique<SkipList<string, string>>();
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        // 切换 active -> immutable , 创建新的 active
+        immutable_memtable = std::move(active_memtable); // std::move 的作用是将 active_memtable 的所有权转移到 immutable_memtable 中，active_memtable 变为 nullptr。
+        active_memtable = std::make_unique<SkipList<string, string>>();
+        active_size = 0;
+    }
 
     // 触发后台 flush 
     if (flush_callback && immutable_memtable) {
-        is_flushing = true;
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            is_flushing = true;
+        }
         std::thread([this]() {
+            // std::cout << "flush memtable to sstable..." << std::endl;
             flush_callback(immutable_memtable.get()); // ->  KVStore::flushMemtable()
-            {
+
+            { // flush 完成后，用 mutex 清理
                 std::lock_guard<std::mutex> lock(mutex);
- 
-                immutable_memtable.reset(); // 释放 immutable MemTable 的资源，std::unique_ptr 的 reset() 方法会删除当前管理的对象并将指针置为 nullptr。
+                immutable_memtable.reset();
                 is_flushing = false;
-                std::cout << "is_flushing : " << is_flushing << std::endl;
             }
         }).detach();
     }
@@ -90,8 +94,14 @@ void MemTableManager::set_flush_callback(std::function<void(SkipList<string, str
 
 // 等待 flush 完成
 void MemTableManager::wait_flush() {
-    while (is_flushing) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    while (true) {
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+
+            if (!is_flushing && !immutable_memtable)
+                return;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 }
 

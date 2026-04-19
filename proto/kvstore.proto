@@ -1,0 +1,94 @@
+syntax = "proto3";
+
+package kvstore;
+
+service KVStoreService {
+    rpc Put(PutRequest) returns (PutResponse);
+    rpc Get(GetRequest) returns (GetResponse);
+    rpc Delete(DeleteRequest) returns (DeleteResponse);
+    rpc Scan(ScanRequest) returns (ScanResponse);
+    rpc BeginTransaction(BeginTxnRequest) returns (BeginTxnResponse);
+    rpc CommitTransaction(CommitTxnRequest) returns (CommitTxnResponse);
+    rpc RollbackTransaction(RollbackTxnRequest) returns (RollbackTxnResponse);
+}
+
+message PutRequest {
+    string key = 1;
+    string value = 2;
+    uint64 txn_id = 3;
+}
+
+message PutResponse {
+    bool success = 1;
+    string error = 2;
+    uint64 version = 3;
+}
+
+message GetRequest {
+    string key = 1;
+    uint64 snapshot_version = 2;
+    uint64 txn_id = 3;
+}
+
+message GetResponse {
+    bool success = 1;
+    string value = 2;
+    uint64 version = 3;
+    string error = 4;
+}
+
+message DeleteRequest {
+    string key = 1;
+    uint64 txn_id = 2;
+}
+
+message DeleteResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message ScanRequest {
+    string start_key = 1;
+    string end_key = 2;
+    uint32 page_size = 3;
+    string page_token = 4;
+    uint64 snapshot_version = 5;
+}
+
+message ScanResponse {
+    repeated KeyValue data = 1;
+    string next_token = 2;
+    bool has_more = 3;
+}
+
+message KeyValue {
+    string key = 1;
+    string value = 2;
+    uint64 version = 3;
+}
+
+message BeginTxnRequest {
+    string isolation_level = 1;
+}
+
+message BeginTxnResponse {
+    uint64 txn_id = 1;
+    uint64 snapshot_version = 2;
+}
+
+message CommitTxnRequest {
+    uint64 txn_id = 1;
+}
+
+message CommitTxnResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message RollbackTxnRequest {
+    uint64 txn_id = 1;
+}
+
+message RollbackTxnResponse {
+    bool success = 1;
+}

@@ -27,9 +27,9 @@ BloomFilter::BloomFilter(size_t expected_keys, double false_positive_rate) {
     );
     bits_count = std::max(bits_count, (size_t)64);
 
-    std::cout << "expected_keys: " << expected_keys 
-        << ", false_positive_rate: " << false_positive_rate
-        << ", bits_count: " << bits_count << std::endl;
+    // std::cout << "expected_keys: " << expected_keys 
+    //     << ", false_positive_rate: " << false_positive_rate
+    //     << ", bits_count: " << bits_count << std::endl;
 
     bits.resize(bits_count, false); // 将 bits 数组设置为 bits_count 大小，并初始化为 false。bits_count 的单位是位
 }

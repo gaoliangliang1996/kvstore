@@ -5,6 +5,7 @@
 #include <thread>
 #include <functional>
 #include <string>
+#include <iostream>
 
 namespace kvstore {
 
@@ -18,6 +19,7 @@ private:
 
     // 状态管理
     std::mutex mutex;
+    
     std::atomic<size_t> active_size; // 当前 active MemTable 的大小
     std::atomic<bool> is_flushing;   // 是否正在 flush 中
 
@@ -39,7 +41,10 @@ public:
     void switch_memtable();
 
     // 检查是否需要切换
-    bool need_switch() const { return active_size >= max_size; }
+    bool need_switch() const { 
+        // std::cout << "active_size: " << active_size << std::endl;
+        return active_size >= max_size; 
+    }
 
     // 获取当前大小
     size_t size() const { return active_size; }

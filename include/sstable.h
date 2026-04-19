@@ -1,10 +1,23 @@
 #pragma once
 #include "common.h"
+#include "bloom_filter.h"
 #include <map>
 #include <fstream>
 #include <unistd.h>
 
 namespace kvstore {
+
+const uint32_t SSTABLE_MAGIC = 0xABCD5678;
+const uint32_t SSTABLE_VERSION = 3; // 版本3：Bloom Filter 在文件末尾
+
+// 文件头结构
+struct SSTableHeader {
+    uint32_t magic;
+    uint32_t version;
+    uint64_t bloom_offset;  // Bloom Filter 数据起始位置（在文件末尾）
+    uint64_t record_offset;  // 第一条 Record 的起始位置
+    uint32_t reserved[4];    // 预留空间便于后续扩展
+};
 
 class SSTable {
 private:
@@ -18,9 +31,14 @@ private:
     int fd;
     std::vector<string> keys;       // 索引：所有 key
     std::vector<uint64_t> offsets;  // 索引：每个 key 对应的 offset
+    std::unique_ptr<BloomFilter> bloom_filter;
 
     void buildIndex();
     uint64_t writeData(const string& data);
+
+    void buildBloomFilter();
+    void writeBloomFilter();
+    void readBloomFilter();
 public:
     SSTable(const string& path);
     ~SSTable();
@@ -42,13 +60,11 @@ public:
 
     // 获取文件名
     string get_filename() const { return filename; }
-    bool delete_file() {
-        if (fd >= 0) {
-            close(fd);
-            fd = -1;
-        }
-        return unlink(filename.c_str()) == 0;
-    }
+
+    // Bloom Filter 相关
+    void setBloomFilter(std::unique_ptr<BloomFilter> filter);
+    const BloomFilter* getBloomFilter() const { return bloom_filter.get(); }
+    bool mayContain(const string& key) const;
 
     // 迭代器类
     class Iterator {
@@ -74,6 +90,9 @@ public:
     Iterator begin() const;
     Iterator end() const;
     Iterator find(const string& key) const;
+
+    void close();
+    bool delete_file();
 };
 
 }

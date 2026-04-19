@@ -40,6 +40,17 @@ class LRUCache {
 
 5. 快照管理 使其支持 MVCC（多版本并发控制），允许读取旧版本数据。
 
+范围查询
+
+6. 事务支持
+class Transaction {
+    void put(const string& key, const string& value);
+    void commit();
+    void rollback();
+};
+
+7. 网络接口
+
 RAFT 协议实现（中优先级）
 1. Leader Election（领导者选举）
 2. Log Replication（日志复制）

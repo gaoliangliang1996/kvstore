@@ -152,13 +152,17 @@ void KVStore::flushMemtable(SkipList<string, string>* memtable) {
     // 3. 创建 SSTable
     std::shared_ptr<SSTable> sst = std::shared_ptr<SSTable>(SSTable::createFromMemTable(sst_path, data));
 
-    // 构建 bloom filter
-    auto bloom = std::make_unique<BloomFilter>(sst->size() * 10);
-    for (auto it = sst->begin(); it.valid(); it.next()) {
-        bloom->add(it.key());
+    // 构建 bloom filter. 每一个 sstable 都应该有一个 bloom filter 来加速查询。这里我们简单地为每个 sstable 创建一个 bloom filter，并将所有 key 添加到 bloom filter 中。
+    if (config.enable_bloom_filter) {
+        auto bloom = std::make_unique<BloomFilter>(
+            data.size() * config.bloom_bits_per_key
+        );
+
+        for (auto it = sst->begin(); it.valid(); it.next()) {
+            bloom->add(it.key());
+        }
+        sst->setBloomFilter(std::move(bloom));
     }
-    // 将 bloom filter 与 SSTable 关联
-    // sst->set_bloom_filter(std::move(bloom));
 
     // 添加到内存中的 SSTable 列表
     sstables.push_back(sst);
@@ -186,6 +190,9 @@ bool KVStore::getFromSSTables(const string& key, string& value) {
         std::vector<SSTable*> files = compaction->get_level_files(level);
         // 从最新的 SSTable 开始查找
         for (auto it = files.rbegin(); it != files.rend(); ++it) {
+            if (!(*it)->mayContain(key)) // 这个 SSTable 没有这个 key
+                continue;
+
             if ((*it)->get(key, value))
                 return true;
         }
