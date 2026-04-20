@@ -1,17 +1,47 @@
+/*
+    * kvstore.proto
+    *
+    * 定义了一个分布式键值存储系统的 gRPC 接口，支持基本的 CRUD 操作、批量操作、范围查询和事务管理。
+    * 该接口设计旨在提供高性能和强一致性的分布式存储服务，适用于各种应用场景，如缓存系统、配置管理和分布式数据库等。
+    *
+    * 主要功能包括：
+    * - Put/Get/Delete：基本的键值操作，支持事务上下文。
+    * - MultiPut/MultiGet：批量处理多个键值对，提高效率。
+    * - Scan：范围查询，支持分页和版本控制。
+    * - 事务支持：提供事务开始、提交和回滚接口，支持不同隔离级别。
+    * - 管理操作：提供系统状态查询和健康检查接口。
+    *
+    * 该接口设计考虑了分布式环境中的一致性、性能和可扩展性，适合构建高可靠性的分布式存储系统。
+*/
 syntax = "proto3";
 
 package kvstore;
 
 service KVStoreService {
+    // 基本操作
     rpc Put(PutRequest) returns (PutResponse);
     rpc Get(GetRequest) returns (GetResponse);
     rpc Delete(DeleteRequest) returns (DeleteResponse);
+    
+    // 批量操作
+    rpc MultiPut(MultiPutRequest) returns (MultiPutResponse);
+    rpc MultiGet(MultiGetRequest) returns (MultiGetResponse);
+    
+    // 范围查询
     rpc Scan(ScanRequest) returns (ScanResponse);
+    
+    // 事务支持
     rpc BeginTransaction(BeginTxnRequest) returns (BeginTxnResponse);
     rpc CommitTransaction(CommitTxnRequest) returns (CommitTxnResponse);
     rpc RollbackTransaction(RollbackTxnRequest) returns (RollbackTxnResponse);
+    
+    // 管理操作
+    rpc Flush(FlushRequest) returns (FlushResponse);
+    rpc Stats(StatsRequest) returns (StatsResponse);
+    rpc Ping(PingRequest) returns (PingResponse);
 }
 
+// Put 操作
 message PutRequest {
     string key = 1;
     string value = 2;
@@ -24,6 +54,7 @@ message PutResponse {
     uint64 version = 3;
 }
 
+// Get 操作
 message GetRequest {
     string key = 1;
     uint64 snapshot_version = 2;
@@ -37,6 +68,7 @@ message GetResponse {
     string error = 4;
 }
 
+// Delete 操作
 message DeleteRequest {
     string key = 1;
     uint64 txn_id = 2;
@@ -47,33 +79,64 @@ message DeleteResponse {
     string error = 2;
 }
 
+// 批量 Put
+message MultiPutRequest {
+    repeated PutRequest puts = 1;
+}
+
+message MultiPutResponse {
+    bool success = 1;
+    string error = 2;
+    repeated uint64 versions = 3;
+}
+
+// 批量 Get
+message MultiGetRequest {
+    repeated string keys = 1;
+    uint64 snapshot_version = 2;
+}
+
+message MultiGetResponse {
+    message KeyValue {
+        string key = 1;
+        string value = 2;
+        uint64 version = 3;
+    }
+    bool success = 1;
+    string error = 2;
+    repeated KeyValue results = 3;
+}
+
+// 范围查询
 message ScanRequest {
     string start_key = 1;
     string end_key = 2;
-    uint32 page_size = 3;
-    string page_token = 4;
-    uint64 snapshot_version = 5;
+    uint32 limit = 3;
+    uint64 snapshot_version = 4;
 }
 
 message ScanResponse {
-    repeated KeyValue data = 1;
-    string next_token = 2;
-    bool has_more = 3;
+    message KeyValue {
+        string key = 1;
+        string value = 2;
+        uint64 version = 3;
+    }
+    bool success = 1;
+    string error = 2;
+    repeated KeyValue results = 3;
+    bool has_more = 4;
 }
 
-message KeyValue {
-    string key = 1;
-    string value = 2;
-    uint64 version = 3;
-}
-
+// 事务操作
 message BeginTxnRequest {
-    string isolation_level = 1;
+    string isolation_level = 1;  // SNAPSHOT, SERIALIZABLE
 }
 
 message BeginTxnResponse {
-    uint64 txn_id = 1;
-    uint64 snapshot_version = 2;
+    bool success = 1;
+    uint64 txn_id = 2;
+    uint64 snapshot_version = 3;
+    string error = 4;
 }
 
 message CommitTxnRequest {
@@ -91,4 +154,34 @@ message RollbackTxnRequest {
 
 message RollbackTxnResponse {
     bool success = 1;
+    string error = 2;
+}
+
+// 管理操作
+message FlushRequest {}
+
+message FlushResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message StatsRequest {}
+
+message StatsResponse {
+    uint64 total_keys = 1;
+    uint64 total_versions = 2;
+    uint64 memtable_size = 3;
+    uint64 sstable_count = 4;
+    uint64 cache_hits = 5;
+    uint64 cache_misses = 6;
+    double cache_hit_rate = 7;
+}
+
+message PingRequest {
+    string message = 1;
+}
+
+message PingResponse {
+    string message = 1;
+    uint64 timestamp = 2;
 }

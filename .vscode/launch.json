@@ -5,7 +5,7 @@
             "name": "Debug KVStore Test",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/kvstore_test",
+            "program": "${workspaceFolder}/build/kvstore_client",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
@@ -31,7 +31,7 @@
             "name": "Attach to Process",
             "type": "cppdbg",
             "request": "attach",
-            "program": "${workspaceFolder}/build/kvstore_test",
+            "program": "${workspaceFolder}/build/kvstore_client",
             "processId": "${command:pickProcess}",
             "MIMode": "gdb"
         }

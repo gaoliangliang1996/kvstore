@@ -129,6 +129,76 @@ bool MVCCKVStore::get(const string& key, string& value, Version snap_ver) {
     return false;
 }
 
+void MVCCKVStore::collect_from_memtable(const string& start_key, const string& end_key, Version snap_ver, std::map<string, std::pair<string, Version>>& merged) {
+    
+    // 获取 MemTable 的所有数据（这里需要扩展 MemTable 支持范围迭代）
+    // 方法1：如果 MemTable 内部使用有序结构，可以直接遍历
+    // 方法2：添加 range_scan 接口到 MemTableImpl
+    
+    // 这里展示方法2：需要先在 MemTableImpl 中添加 range_scan 方法
+    // memtable_->range_scan(start_key, end_key, snap_ver, merged);
+
+}
+
+void MVCCKVStore::collect_from_sstables(const string& start_key, const string& end_key, Version snap_ver, std::map<string, std::pair<string, Version>>& merged) {
+    // 优化：只遍历可能包含范围内 key 的 SSTable
+    for (auto& sst : sstables) {
+        // 快速过滤：检查 SSTable 的 key 范围是否与查询范围有重叠
+        if (sst->get_max_key() < start_key || sst->get_min_key() > end_key) {
+            continue;
+        }
+        
+        // 使用 SSTable 的迭代器，只遍历范围内的 key
+        auto it = sst->lower_bound(start_key);
+        while (it.valid() && it.key() <= end_key) {
+            string key = it.key();
+            
+            // 只处理未被 MemTable 覆盖的 key
+            if (merged.find(key) == merged.end()) {
+                string value;
+                if (sst->get(key, value)) {
+                    merged[key] = {value, 0};
+                }
+            }
+            it.next();
+        }
+    }
+}
+
+std::vector<std::pair<string, string>> MVCCKVStore::range_scan(const string& start_key, const string& end_key, Version snap_ver = 0, size_t limit = 0) {
+    if (snap_ver == 0) {
+        snap_ver = memtable->get_current_version();
+    }
+    
+    std::map<string, std::pair<string, Version>> merged;
+    
+    // 1. 从 MemTable 收集（优先级最高）
+    collect_from_memtable(start_key, end_key, snap_ver, merged);
+    
+    // 2. 从 SSTable 收集
+    collect_from_sstables(start_key, end_key, snap_ver, merged);
+    
+    // 3. 转换为结果
+    std::vector<std::pair<string, string>> results;
+    for (const auto& [key, kv] : merged) {
+        results.emplace_back(key, kv.first);
+        if (limit > 0 && results.size() >= limit) {
+            break;
+        }
+    }
+    
+    return results;
+}
+
+std::vector<std::pair<string, string>> MVCCKVStore::prefix_scan(const string& prefix, Version snap_ver = 0, size_t limit = 0) {
+
+}
+
+MVCCKVStore::PageResult MVCCKVStore::paginated_scan(const string& start_key, const string& end_key, size_t page_size, const string& page_token, Version snap_ver = 0) {
+
+}
+
+
 std::shared_ptr<Snapshot> MVCCKVStore::create_snapshot() {
     std::shared_ptr<Snapshot> snapshot = memtable->create_snapshot();
     
