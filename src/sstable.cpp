@@ -341,7 +341,7 @@ bool SSTable::get(const string& key, string& value) const {
     }
     
     // 二分查找 key
-    auto it = std::lower_bound(keys.begin(), keys.end(), key);
+    auto it = std::lower_bound(keys.begin(), keys.end(), key, NaturalLess());
     if (it == keys.end() || *it != key) {
         return false;
     }

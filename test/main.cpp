@@ -113,8 +113,8 @@ void test_client() {
     client.Get("txn_key1", value);
     std::cout << "After commit: txn_key1 = " << value << std::endl;
     
-    // std::cout << "\n========== Stats ==========" << std::endl;
-    // std::cout << client.GetStats() << std::endl;
+    std::cout << "\n========== Stats ==========" << std::endl;
+    std::cout << client.GetStats() << std::endl;
     
     // Flush
     std::cout << "Flushing..." << std::endl;

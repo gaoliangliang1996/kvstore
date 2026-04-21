@@ -130,74 +130,126 @@ bool MVCCKVStore::get(const string& key, string& value, Version snap_ver) {
 }
 
 void MVCCKVStore::collect_from_memtable(const string& start_key, const string& end_key, Version snap_ver, std::map<string, std::pair<string, Version>>& merged) {
-    
-    // 获取 MemTable 的所有数据（这里需要扩展 MemTable 支持范围迭代）
-    // 方法1：如果 MemTable 内部使用有序结构，可以直接遍历
-    // 方法2：添加 range_scan 接口到 MemTableImpl
-    
-    // 这里展示方法2：需要先在 MemTableImpl 中添加 range_scan 方法
-    // memtable_->range_scan(start_key, end_key, snap_ver, merged);
+    if (!memtable)
+        return;
 
-}
+    // std::map<string, std::map<Version, VersionedValue>, NaturalLess>
+    auto all_data = memtable->get_all_data();
 
-void MVCCKVStore::collect_from_sstables(const string& start_key, const string& end_key, Version snap_ver, std::map<string, std::pair<string, Version>>& merged) {
-    // 优化：只遍历可能包含范围内 key 的 SSTable
-    for (auto& sst : sstables) {
-        // 快速过滤：检查 SSTable 的 key 范围是否与查询范围有重叠
-        if (sst->get_max_key() < start_key || sst->get_min_key() > end_key) {
-            continue;
-        }
-        
-        // 使用 SSTable 的迭代器，只遍历范围内的 key
-        auto it = sst->lower_bound(start_key);
-        while (it.valid() && it.key() <= end_key) {
-            string key = it.key();
-            
-            // 只处理未被 MemTable 覆盖的 key
-            if (merged.find(key) == merged.end()) {
-                string value;
-                if (sst->get(key, value)) {
-                    merged[key] = {value, 0};
-                }
-            }
-            it.next();
+    for (const auto& [key, version] : all_data) {
+        if (is_key_in_range(key, start_key, end_key)) {
+            string value;
+
+            if (memtable->get(key, value, snap_ver))
+                if (merged.find(key) == merged.end())
+                    merged[key] = {value, snap_ver};
         }
     }
 }
 
-std::vector<std::pair<string, string>> MVCCKVStore::range_scan(const string& start_key, const string& end_key, Version snap_ver = 0, size_t limit = 0) {
+void MVCCKVStore::collect_from_sstables(const string& start_key, const string& end_key, std::map<string, std::pair<string, Version>>& merged) {
+    for (const auto& sst : sstables) {
+        // sst->get_max_key() < start_key                || sst->get_min_key() > end_key
+        if (NaturalLess()(sst->get_max_key(), start_key) || NaturalLess()(end_key, sst->get_min_key())) {
+            continue;  // 这个 SSTable 完全没有范围内的键
+        }
+
+        // 遍历 SSTable 中的键
+        for (auto it = sst->begin(); it.valid(); it.next()) {
+            string key = it.key();
+            
+            if (is_key_in_range(key, start_key, end_key)) {
+                // 只处理未见过的键（MemTable 优先级更高）
+                if (merged.find(key) == merged.end()) {
+                    string value;
+                    if (sst->get(key, value)) {
+                        merged[key] = {value, 0};
+                    }
+                }
+            }
+        }
+    }
+}
+
+// NaturalLess()(key, start) 表示 key < start
+bool MVCCKVStore::is_key_in_range(const string& key, const string& start, const string& end) const {
+    //     key >= start               && end >= key
+    return !NaturalLess()(key, start) && !NaturalLess()(end, key); // start <= key <= end, 使用 NaturalLess 进行自然排序比较
+}
+
+RangeIterator MVCCKVStore::range_scan(const string& start_key, const string& end_key, Version snap_ver) {
+    // 1. 确定快照版本
     if (snap_ver == 0) {
         snap_ver = memtable->get_current_version();
     }
     
+    // 2. 收集结果（使用 map 自动按键排序）
     std::map<string, std::pair<string, Version>> merged;
     
-    // 1. 从 MemTable 收集（优先级最高）
+    // 3. 从 MemTable 收集（优先级最高）
     collect_from_memtable(start_key, end_key, snap_ver, merged);
     
-    // 2. 从 SSTable 收集
-    collect_from_sstables(start_key, end_key, snap_ver, merged);
+    // 4. 从 SSTable 收集
+    collect_from_sstables(start_key, end_key, merged);
     
-    // 3. 转换为结果
-    std::vector<std::pair<string, string>> results;
+    // 5. 构建迭代器
+    RangeIterator iter;
     for (const auto& [key, kv] : merged) {
-        results.emplace_back(key, kv.first);
-        if (limit > 0 && results.size() >= limit) {
-            break;
-        }
+        iter.add_result(key, kv.first, kv.second);
+    }
+    iter.sort_results();
+    
+    return iter;
+}
+
+RangeIterator MVCCKVStore::prefix_scan(const string& prefix, Version snap_ver) {
+    string start_key = prefix;
+    string end_key = prefix;
+    if (!end_key.empty()) {
+        end_key.back()++;
+    }
+
+    return range_scan(start_key, end_key, snap_ver);
+}
+
+MVCCKVStore::PageResult MVCCKVStore::paginated_scan(const string& start_key, const string& end_key, size_t page_size, const string& page_token, Version snap_ver) {
+    PageResult result;
+    
+    string actual_start = page_token.empty() ? start_key : page_token;
+    auto iter = range_scan(actual_start, end_key, snap_ver);
+    
+    size_t count = 0;
+    while (iter.valid() && count < page_size) {
+        result.data.emplace_back(iter.key(), iter.value());
+        count++;
+        iter.next();
     }
     
-    return results;
+    if (iter.valid()) {
+        result.has_more = true;
+        result.next_token = iter.key();
+    }
+    
+    return result;
 }
 
-std::vector<std::pair<string, string>> MVCCKVStore::prefix_scan(const string& prefix, Version snap_ver = 0, size_t limit = 0) {
-
+std::vector<string> MVCCKVStore::get_all_keys(Version snap_ver) {
+    if (snap_ver == 0) {
+        snap_ver = memtable->get_current_version();
+    }
+    
+    std::vector<string> keys;
+    std::map<string, std::pair<string, Version>> merged;
+    
+    collect_from_memtable("", "\xFF", snap_ver, merged); // end_key = "\xFF"
+    collect_from_sstables("", "\xFF", merged);
+    
+    for (const auto& [key, _] : merged) {
+        keys.push_back(key);
+    }
+    
+    return keys;
 }
-
-MVCCKVStore::PageResult MVCCKVStore::paginated_scan(const string& start_key, const string& end_key, size_t page_size, const string& page_token, Version snap_ver = 0) {
-
-}
-
 
 std::shared_ptr<Snapshot> MVCCKVStore::create_snapshot() {
     std::shared_ptr<Snapshot> snapshot = memtable->create_snapshot();

@@ -51,7 +51,6 @@ set(SOURCES
     src/lru_cache.cpp
     src/mvcc_sstable.cpp
     src/mvcc_kvstore.cpp
-    src/range_query.cpp
     src/transaction.cpp
     src/server.cpp
     src/client.cpp
@@ -76,16 +75,29 @@ target_link_libraries(parse_wal z)
 add_executable(parse_sstable tools/parse_sstable.cpp)
 target_link_libraries(parse_sstable z)
 
-# 可执行文件
-add_executable(kvstore_server test/main.cpp ${SOURCES})
+# 服务器
+add_executable(kvstore_server
+    server/server_main.cpp
+    src/server.cpp
+    ${SOURCES}
+    ${PROTO_SRCS}
+    ${GRPC_SRCS}
+)
 target_link_libraries(kvstore_server 
     Threads::Threads
     gRPC::grpc++
     protobuf::libprotobuf
 )
 
-# # 也可以编译客户端单独测试
-add_executable(kvstore_client test/main.cpp ${SOURCES})
+# 客户端
+add_executable(kvstore_client
+    client/client_main.cpp
+    src/client.cpp
+    client/command_parser.cpp
+    ${PROTO_SRCS}
+    ${GRPC_SRCS}
+)
+
 target_link_libraries(kvstore_client 
     Threads::Threads
     gRPC::grpc++

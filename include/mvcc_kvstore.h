@@ -11,6 +11,41 @@
 
 namespace kvstore {
 
+class RangeIterator {
+private:
+    struct KeyValue {
+        string key;     ///< 键
+        string value;   ///< 值
+        Version version; ///< 版本号
+    };
+    
+    std::vector<KeyValue> results; ///< 查询结果列表
+    size_t current_pos;            ///< 当前迭代位置
+    
+public:
+    RangeIterator() : current_pos(0) {}
+    
+    void add_result(const string& key, const string& value, Version ver) {
+        results.push_back({key, value, ver});
+    }
+    
+    void sort_results() {
+        std::sort(results.begin(), results.end(),
+                  [](const KeyValue& a, const KeyValue& b) {
+                      return NaturalLess()(a.key, b.key);
+                  });
+    }
+    
+
+    bool valid() const { return current_pos < results.size(); }
+    void next() { current_pos++; }
+    string key() const { return results[current_pos].key; }
+    string value() const { return results[current_pos].value; }
+    Version version() const { return results[current_pos].version; }
+    size_t size() const { return results.size(); }
+    void clear() { results.clear(); current_pos = 0; }
+};
+
 class MVCCKVStore {
 private:
     std::unique_ptr<MVCCMemTable> memtable;
@@ -44,7 +79,20 @@ private:
     bool getFromSSTables(const string& key, string& value, Version snap_ver);
     void cleanupOldSnapshots();
     Version getMinActiveSnapshotVersion();
-    
+
+    struct PageResult {
+        std::vector<std::pair<string, string>> data; ///< 当前页的数据
+        string next_token;                            ///< 下一页的起始 token
+        bool has_more;                                ///< 是否还有更多数据
+
+        PageResult() : has_more(false), next_token("") {}
+    };
+
+    // 内部范围查询实现
+    void collect_from_memtable(const string& start_key, const string& end_key, Version snap_ver, std::map<string, std::pair<string, Version>>& merged);
+    void collect_from_sstables(const string& start_key, const string& end_key, std::map<string, std::pair<string, Version>>& merged);
+    // 辅助方法
+    bool is_key_in_range(const string& key, const string& start, const string& end) const;
 public:
     MVCCKVStore(const Config& cfg);
     ~MVCCKVStore();
@@ -57,7 +105,13 @@ public:
     Version put(const string& key, const string& value);
     Version del(const string& key);
     bool get(const string& key, string& value, Version snap_ver = 0);
-    
+
+    // 范围查询
+    RangeIterator range_scan(const string& start_key, const string& end_key, Version snap_ver = 0);
+    RangeIterator prefix_scan(const string& prefix, Version snap_ver = 0);
+    PageResult paginated_scan(const string& start_key, const string& end_key, size_t page_size, const string& page_token, Version snap_ver = 0);
+    std::vector<string> get_all_keys(Version snap_ver = 0);
+
     // 快照管理
     std::shared_ptr<Snapshot> create_snapshot();
     void release_snapshot(std::shared_ptr<Snapshot> snapshot);

@@ -122,21 +122,21 @@ grpc::Status KVStoreServiceImpl::MultiGet(grpc::ServerContext* context,
 grpc::Status KVStoreServiceImpl::Scan(grpc::ServerContext* context,
                                        const ScanRequest* request,
                                        ScanResponse* response) {
-    // // 简化实现：使用存储引擎的范围扫描
-    // // 实际应该从 MemTable 和 SSTable 中获取数据
-    // auto results = store_->scan(request->start_key(), 
-    //                              request->end_key(),
-    //                              request->limit());
+    // 简化实现：使用存储引擎的范围扫描
+    // 实际应该从 MemTable 和 SSTable 中获取数据
+    RangeIterator iter = store_->range_scan(request->start_key(), request->end_key());
     
-    // for (const auto& kv : results) {
-    //     auto* item = response->add_results();
-    //     item->set_key(kv.first);
-    //     item->set_value(kv.second);
-    // }
+    while (iter.valid()) {
+        auto* item = response->add_results();
+        item->set_key(iter.key());
+        item->set_value(iter.value());
+
+        iter.next();
+    }
     
-    // response->set_success(true);
-    // response->set_has_more(false);
-    // return grpc::Status::OK;
+    response->set_success(true);
+    response->set_has_more(false);
+    return grpc::Status::OK;
 }
 
 grpc::Status KVStoreServiceImpl::BeginTransaction(grpc::ServerContext* context,

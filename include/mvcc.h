@@ -161,6 +161,55 @@ public:
         data.clear();
         total_size = 0;
     }
+
+    // 获取范围内的 key
+    std::vector<string> get_keys_in_range(const string& start_key, 
+                                           const string& end_key) const {
+        std::shared_lock<std::shared_mutex> lock(mutex);
+        
+        std::vector<string> keys;
+        auto it = data.lower_bound(start_key);
+        while (it != data.end() && !NaturalLess()(end_key, it->first)) { // end >= it->first
+            keys.push_back(it->first);
+            ++it;
+        }
+        return keys;
+    }
+
+    // 获取所有键
+    std::vector<string> get_all_keys() const {
+        std::shared_lock<std::shared_mutex> lock(mutex);
+        
+        std::vector<string> keys;
+        for (const auto& [key, _] : data) {
+            keys.push_back(key);
+        }
+        return keys;
+    }
+
+    // 范围迭代器
+    class MemTableIterator {
+    private:
+        std::map<string, std::unique_ptr<MVCCNode>, NaturalLess>::const_iterator it;
+        std::map<string, std::unique_ptr<MVCCNode>, NaturalLess>::const_iterator end;
+        
+    public:
+        MemTableIterator(decltype(it) i, decltype(end) e) : it(i), end(e) {}
+        
+        bool valid() const { return it != end; }
+        void next() { ++it; }
+        string key() const { return it->first; }
+        const MVCCNode* node() const { return it->second.get(); }
+    };
+    
+    MemTableIterator get_range_iterator(const string& start_key, const string& end_key) const {
+        std::shared_lock<std::shared_mutex> lock(mutex);
+
+        // std::map<string, std::unique_ptr<MVCCNode>, NaturalLess> data;
+        auto start_it = data.lower_bound(start_key);
+        auto end_it = data.upper_bound(end_key);
+        return MemTableIterator(start_it, end_it);
+    }
 };
 
 // 快照
@@ -291,6 +340,38 @@ public:
             return immutable_memtable->get_all_data();
         }
         return {};
+    }
+
+    std::map<string, std::map<Version, VersionedValue>, NaturalLess> get_active_data() const {
+        std::shared_lock<std::shared_mutex> lock(mutex);
+        if (active_memtable) {
+            return active_memtable->get_all_data();
+        }
+        return {};
+    }
+
+    std::map<string, std::map<Version, VersionedValue>, NaturalLess> get_all_data() const {
+        std::shared_lock<std::shared_mutex> lock(mutex);
+        
+        std::map<string, std::map<Version, VersionedValue>, NaturalLess> result;
+        
+        // 1. 从 active_memtable 收集数据
+        auto active_data = get_active_data();
+        for (const auto& [key, versions] : active_data) {
+            for (const auto& [ver, vv] : versions) {
+                result[key][ver] = vv;
+            }
+        }
+        
+        // 2. 从 immutable_memtable 收集数据（如果存在）
+        auto immutable_data = get_immutable_data();
+        for (const auto& [key, versions] : immutable_data) {
+            for (const auto& [ver, vv] : versions) {
+                result[key][ver] = vv;
+            }
+        }
+        
+        return result;
     }
     
     // 清空所有（用于测试）

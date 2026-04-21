@@ -1,12 +1,16 @@
 {
     "version": "0.2.0",
     "configurations": [
+        // ============== 调试 Server ==============
         {
-            "name": "Debug KVStore Test",
+            "name": "Debug KVStore Server",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/kvstore_client",
-            "args": [],
+            "program": "${workspaceFolder}/build/kvstore_server",
+            "args": [
+                "--addr", "0.0.0.0:50051",
+                "--data", "./data"
+            ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
@@ -20,20 +24,32 @@
                 }
             ],
             "preLaunchTask": "Build with CMake",
-            "miDebuggerPath": "/usr/bin/gdb",
-            "logging": {
-                "engineLogging": false,
-                "trace": false,
-                "traceResponse": false
-            }
+            "miDebuggerPath": "/usr/bin/gdb"
         },
+
+        // ============== 调试 Client ==============
         {
-            "name": "Attach to Process",
+            "name": "Debug KVStore Client",
             "type": "cppdbg",
-            "request": "attach",
+            "request": "launch",
             "program": "${workspaceFolder}/build/kvstore_client",
-            "processId": "${command:pickProcess}",
-            "MIMode": "gdb"
-        }
+            "args": [
+                "--addr", "0.0.0.0:50051"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Build with CMake",
+            "miDebuggerPath": "/usr/bin/gdb"
+        },
     ]
 }

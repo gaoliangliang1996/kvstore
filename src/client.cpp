@@ -227,13 +227,13 @@ std::string KVClient::GetStats() {
     grpc::Status status = stub_->Stats(&context, request, &response);
     
     if (status.ok()) {
-        std::stringstream ss;
-        ss << "Total Keys: " << response.total_keys() << "\n";
-        ss << "Total Versions: " << response.total_versions() << "\n";
-        ss << "MemTable Size: " << response.memtable_size() << "\n";
-        ss << "SSTable Count: " << response.sstable_count() << "\n";
-        ss << "Cache Hit Rate: " << response.cache_hit_rate() << "%\n";
-        return ss.str();
+        // std::stringstream ss;
+        // ss << "Total Keys: " << response.total_keys() << "\n";
+        // ss << "Total Versions: " << response.total_versions() << "\n";
+        // ss << "MemTable Size: " << response.memtable_size() << "\n";
+        // ss << "SSTable Count: " << response.sstable_count() << "\n";
+        // ss << "Cache Hit Rate: " << response.cache_hit_rate() << "%\n";
+        // return ss.str();
     }
     
     return "Failed to get stats";
@@ -249,8 +249,7 @@ bool KVClient::Ping() {
     grpc::Status status = stub_->Ping(&context, request, &response);
     
     if (status.ok()) {
-        std::cout << "Pong: " << response.message() 
-                  << " (timestamp: " << response.timestamp() << ")" << std::endl;
+        std::cout << "Pong: " << response.message() << " (timestamp: " << response.timestamp() << ")" << std::endl;
         return true;
     }
     
