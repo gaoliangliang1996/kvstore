@@ -539,5 +539,95 @@ bool MVCCKVStore::is_key_modified_after(const string& key, Version version) {
     return false;
 }
 
+MVCCKVStore::BatchWriteResult MVCCKVStore::BatchWrite(const WriteBatch& batch) {
+    BatchWriteResult result;
+    result.success = true;
+
+    // 1. 批量写 WAL
+    std::vector<Record> wal_records;
+    for (const auto& op : batch.GetOps()) {
+        Record rec;
+        rec.type = (op.type == WriteBatch::OpType::PUT) ? Optype::PUT : Optype::DELETE;
+        rec.key = op.key;
+        rec.value = op.value;
+        wal_records.push_back(rec);
+    }
+
+    // 批量写入 WAL
+    if (!wal->batch_append(wal_records)) {
+        result.success = false;
+        result.error = "WAL write failed";
+        return result;
+    }
+
+    // 2. 批量写入 MemTable
+    Version base_version = memtable->get_current_version();
+    for (const auto& op : batch.GetOps()) {
+        Version ver;
+        if (op.type == WriteBatch::OpType::PUT)
+            ver = memtable->put(op.key, op.value);
+        else
+            ver = memtable->del(op.key);
+        result.versions.push_back(ver);
+        
+        if (ver == 0)
+            result.failed_keys.push_back(op.key);
+    }
+    result.success = result.failed_keys.empty();
+
+    // 3. 检查是否需要 flush
+    if (memtable->need_switch(config.memtable_size) && !is_flushing)
+        flush_async();
+
+    return result;
+}
+
+MVCCKVStore::BatchReadResult MVCCKVStore::BatchRead(const std::vector<string>& keys, Version snap_ver) {
+    BatchReadResult result;
+    result.success = true;
+    result.found_count = 0;
+    
+    if (snap_ver == 0) {
+        snap_ver = memtable->get_current_version();
+    }
+    
+    for (const auto& key : keys) {
+        BatchReadResult::Item item;
+        item.key = key;
+        item.found = false;
+        item.version = 0;
+        
+        // 先查 MemTable
+        string value;
+        if (memtable->get(key, value, snap_ver)) {
+            item.found = true;
+            item.value = value;
+            result.found_count++;
+        }
+        // 再查 SSTable
+        else {
+            for (auto& sst : sstables) {
+                if (sst->may_contain_version(snap_ver) && sst->get(key, value)) {
+                    item.found = true;
+                    item.value = value;
+                    result.found_count++;
+                    break;
+                }
+            }
+        }
+        
+        result.items.push_back(item);
+    }
+    
+    return result;
+}
+
+MVCCKVStore::BatchWriteResult MVCCKVStore::BatchDelete(const std::vector<string>& keys) {
+    WriteBatch batch;
+    for (const auto& key : keys) {
+        batch.Delete(key);
+    }
+    return BatchWrite(batch);
+}
 
 } // namespace kvstore

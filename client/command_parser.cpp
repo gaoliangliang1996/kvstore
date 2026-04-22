@@ -160,18 +160,33 @@ void CommandParser::handle_multiput(const std::vector<std::string>& tokens) {
     }
 }
 
-void CommandParser::handle_multiget(const std::vector<std::string>& tokens) {
+void CommandParser::handle_multiget(const std::vector<std::string>& tokens) { 
     if (tokens.size() < 2) {
         std::cout << "Usage: multiget <key1> <key2> ..." << std::endl;
         return;
     }
     
     std::vector<std::string> keys(tokens.begin() + 1, tokens.end());
-    auto results = client_.MultiGet(keys);
     
-    std::cout << "Found " << results.size() << " of " << keys.size() << " keys:" << std::endl;
-    for (const auto& [key, value] : results) {
-        std::cout << "  " << key << " = " << value << std::endl;
+    auto result = client_.MultiGet(keys);
+    
+    if (result.success) {
+        std::cout << "Found " << result.found_count << " of " << keys.size() << " keys:" << std::endl;
+        
+        for (const auto& item : result.items) {
+            if (item.found) {
+                // 处理空字符串值的情况
+                if (item.value.empty()) {
+                    std::cout << "  ✓ " << item.key << " = (empty string)" << std::endl;
+                } else {
+                    std::cout << "  ✓ " << item.key << " = " << item.value << std::endl;
+                }
+            } else {
+                std::cout << "  ✗ " << item.key << " = (not found)" << std::endl;
+            }
+        }
+    } else {
+        std::cout << "MultiGet failed: " << result.error << std::endl;
     }
 }
 

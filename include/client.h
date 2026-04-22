@@ -9,6 +9,20 @@ namespace kvstore {
 
 class KVClient {
 public:
+    struct MultiGetItem {
+        std::string key;
+        std::string value;
+        bool found;
+        uint64_t version;
+    };
+    
+    struct MultiGetResult {
+        bool success;
+        std::vector<MultiGetItem> items;
+        uint32_t found_count;
+        std::string error;
+    };
+
     explicit KVClient(const std::string& address);
     ~KVClient();
     
@@ -19,7 +33,7 @@ public:
     
     // 批量操作
     bool MultiPut(const std::vector<std::pair<std::string, std::string>>& pairs);
-    std::vector<std::pair<std::string, std::string>> MultiGet(const std::vector<std::string>& keys);
+    MultiGetResult MultiGet(const std::vector<std::string>& keys, uint64_t snapshot_version = 0);
     
     // 范围查询
     std::vector<std::pair<std::string, std::string>> Scan(const std::string& start_key,

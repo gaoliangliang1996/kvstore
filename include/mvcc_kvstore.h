@@ -3,6 +3,7 @@
 #include "mvcc.h"
 #include "mvcc_sstable.h"
 #include "wal.h"
+#include "write_batch.h"
 #include "logger.h"
 #include <memory>
 #include <vector>
@@ -139,16 +140,6 @@ public:
     };
     Stats get_stats() const;
     
-    // 辅助方法（用于测试）
-    //    std::vector<std::shared_ptr<MVCCSSTable>> sstables;
-    const std::vector<std::shared_ptr<MVCCSSTable>>& get_sstables() const { 
-        return sstables; // 为什么要把私有数据成员暴露出来？这是为了测试方便，实际设计中应该提供更安全的访问接口。
-    }
-
-    const MVCCMemTable* get_memtable() const {
-        return memtable.get();
-    }
-    
     bool has_immutable() const { return memtable->get_has_immutable(); }
 
     // 事务支持（锁管理）
@@ -156,6 +147,33 @@ public:
     void unlock_key(const string& key, uint64_t txn_id);
     bool is_key_modified_after(const string& key, Version version);
     Version get_current_version() const { return memtable->get_current_version(); }
+
+    // 批量写入
+    struct BatchWriteResult {
+        bool success;
+        std::vector<Version> versions;
+        std::vector<string> failed_keys;
+        string error;
+    };
+    BatchWriteResult BatchWrite(const WriteBatch& batch);
+
+    // 批量读取
+    struct BatchReadResult {
+        struct Item {
+            string key;
+            string value;
+            bool found;
+            Version version;
+        };
+        bool success;
+        std::vector<Item> items;
+        uint32_t found_count;
+        string error;
+    };
+    BatchReadResult BatchRead(const std::vector<string>& keys, Version snap_ver = 0);
+
+    // 批量删除
+    BatchWriteResult BatchDelete(const std::vector<string>& keys);
 };
 
 } // namespace kvstore

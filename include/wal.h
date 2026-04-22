@@ -20,6 +20,7 @@ public:
     ~WAL();
 
     bool append(const Record& rec);
+    bool batch_append(std::vector<Record>& records);
     bool recover(std::function<bool (const Record&)> callback);
     void sync();
     void truncate();

@@ -75,29 +75,48 @@ bool KVClient::MultiPut(const std::vector<std::pair<std::string, std::string>>& 
     
     grpc::Status status = stub_->MultiPut(&context, request, &response);
     
-    return status.ok() && response.success();
+    if (status.ok() && response.success()) {
+        return true;
+    }
+    
+    std::cerr << "MultiPut failed: " << response.error() << std::endl;
+    return false;
 }
 
-std::vector<std::pair<std::string, std::string>> KVClient::MultiGet(const std::vector<std::string>& keys) {
+KVClient::MultiGetResult KVClient::MultiGet(const std::vector<std::string>& keys, uint64_t snapshot_version) {
     MultiGetRequest request;
     for (const auto& key : keys) {
         request.add_keys(key);
     }
+    request.set_snapshot_version(snapshot_version);
     
     MultiGetResponse response;
     grpc::ClientContext context;
     
-    std::vector<std::pair<std::string, std::string>> results;
+    MultiGetResult result;
+    result.success = false;
+    result.found_count = 0;
     
     grpc::Status status = stub_->MultiGet(&context, request, &response);
     
     if (status.ok() && response.success()) {
+        result.success = true;
+        result.found_count = response.found_count();
+        
         for (const auto& kv : response.results()) {
-            results.emplace_back(kv.key(), kv.value());
+            MultiGetItem item;
+            item.key = kv.key();
+            item.value = kv.value();
+            item.found = kv.found();
+            item.version = kv.version();
+            result.items.push_back(item);
         }
+    } else {
+        result.error = response.error();
+        std::cerr << "MultiGet failed: " << result.error << std::endl;
     }
     
-    return results;
+    return result;
 }
 
 std::vector<std::pair<std::string, std::string>> KVClient::Scan(const std::string& start_key,

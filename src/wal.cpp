@@ -117,6 +117,30 @@ bool WAL::append(const Record& rec) {
     return true;
 }
 
+bool WAL::batch_append(std::vector<Record>& records) {
+    if (fd < 0)
+        return false;
+
+    // 1. 批量编码所有记录
+    std::string batch_data;
+    for (const auto& rec : records) {
+        batch_data += encodeRecord(rec);
+    }
+
+    // 2. 一次写入
+    ssize_t written = write(fd, batch_data.data(), batch_data.size());
+    if (written != static_cast<ssize_t>(batch_data.size())) {
+        std::cerr << "[WAL] write failed" << std::endl;
+        return false;
+    }
+
+    // 3. 一次 fsync
+    fsync(fd);
+
+    offset += written;
+    return true;
+}
+
 bool WAL::recover(std::function<bool (const Record&)> callback) {
     lseek(fd, 8, SEEK_SET); // 跳过文件头
 

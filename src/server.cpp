@@ -89,33 +89,57 @@ grpc::Status KVStoreServiceImpl::Delete(grpc::ServerContext* context,
 grpc::Status KVStoreServiceImpl::MultiPut(grpc::ServerContext* context,
                                            const MultiPutRequest* request,
                                            MultiPutResponse* response) {
+    // 构造 WriteBatch
+    WriteBatch batch;
     for (const auto& put_req : request->puts()) {
-        Version ver = store_->put(put_req.key(), put_req.value());
-        response->add_versions(ver);
-        if (ver == 0) { // 写入失败
-            response->set_success(false);
-            response->set_error("Failed to put: " + put_req.key());
-            return grpc::Status::OK;
-        }
+        batch.Put(put_req.key(), put_req.value());
     }
     
-    response->set_success(true);
+    // 调用存储层的批量写入接口
+    auto result = store_->BatchWrite(batch);
+    
+    // 填充响应
+    response->set_success(result.success);
+    for (auto ver : result.versions) {
+        response->add_versions(ver);
+    }
+    
+    if (!result.success) {
+        response->set_error(result.error);
+    }
+    
     return grpc::Status::OK;
 }
 
 grpc::Status KVStoreServiceImpl::MultiGet(grpc::ServerContext* context,
                                            const MultiGetRequest* request,
                                            MultiGetResponse* response) {
+    std::vector<string> keys;
+    keys.reserve(request->keys_size());
     for (const auto& key : request->keys()) {
-        std::string value;
-        if (store_->get(key, value, request->snapshot_version())) {
-            auto* kv = response->add_results();
-            kv->set_key(key);
-            kv->set_value(value);
-        }
+        keys.push_back(key);
     }
     
-    response->set_success(true);
+    auto result = store_->BatchRead(keys, request->snapshot_version());
+    
+    response->set_success(result.success);
+    response->set_found_count(result.found_count);
+    
+    for (const auto& item : result.items) {
+        auto* kv = response->add_results();
+        kv->set_key(item.key);
+        kv->set_found(item.found);
+        kv->set_version(item.version);
+        if (item.found) {
+            kv->set_value(item.value);
+        }
+        // 如果 not found，不设置 value（保持为空）
+    }
+    
+    if (!result.success) {
+        response->set_error(result.error);
+    }
+    
     return grpc::Status::OK;
 }
 

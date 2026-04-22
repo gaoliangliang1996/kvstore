@@ -101,10 +101,12 @@ message MultiGetResponse {
         string key = 1;
         string value = 2;
         uint64 version = 3;
+        bool found = 4;
     }
     bool success = 1;
     string error = 2;
     repeated KeyValue results = 3;
+    uint32 found_count = 4;
 }
 
 // 范围查询
