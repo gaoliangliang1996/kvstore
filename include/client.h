@@ -57,6 +57,17 @@ public:
     
     // 连接状态
     bool IsConnected() const { return channel_ != nullptr; }
+
+    // 隔离级别管理
+    struct IsolationLevelResult {
+        bool success;
+        std::string level;
+        std::string previous_level;
+        std::string error;
+    };
+    
+    IsolationLevelResult SetIsolationLevel(const std::string& level);
+    IsolationLevelResult GetIsolationLevel();
     
 private:
     std::shared_ptr<grpc::Channel> channel_;

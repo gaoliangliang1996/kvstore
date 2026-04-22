@@ -167,13 +167,12 @@ grpc::Status KVStoreServiceImpl::BeginTransaction(grpc::ServerContext* context,
                                                    const BeginTxnRequest* request,
                                                    BeginTxnResponse* response) {
     uint64_t txn_id = get_new_txn_id();
-    IsolationLevel level = IsolationLevel::SNAPSHOT_ISOLATION;
+    IsolationLevel level = get_client_isolation_level(context);
     
-    if (request->isolation_level() == "SERIALIZABLE") {
-        level = IsolationLevel::SERIALIZABLE;
-    }
+    if (!request->isolation_level().empty())
+        level = IsolationLevelUtils::fromString(request->isolation_level());
     
-    auto txn = std::make_unique<Transaction>(store_.get(), level);
+    auto txn = store_->begin_transaction(level);
     
     {
         std::lock_guard<std::mutex> lock(txn_mutex_);
@@ -228,6 +227,45 @@ grpc::Status KVStoreServiceImpl::RollbackTransaction(grpc::ServerContext* contex
     
     // 无论是否找到事务，都返回成功（幂等操作）
     response->set_success(true);
+    return grpc::Status::OK;
+}
+
+// 隔离级别管理
+grpc::Status KVStoreServiceImpl::SetIsolationLevel(grpc::ServerContext* context,
+                                const SetIsolationLevelRequest* request,
+                                SetIsolationLevelResponse* response) {
+    
+    IsolationLevel new_level = IsolationLevelUtils::fromString(request->level());
+    IsolationLevel old_level = store_->get_default_isolation_level();
+    
+    // 检查是否有活跃事务
+    std::lock_guard<std::mutex> lock(txn_mutex_);
+    if (!active_txns_.empty()) {
+        response->set_success(false);
+        response->set_error("Cannot change isolation level while transactions are active");
+        response->set_previous_level(IsolationLevelUtils::toString(old_level));
+        response->set_current_level(IsolationLevelUtils::toString(old_level));
+        return grpc::Status::OK;
+    }
+    
+    // 设置当前连接的隔离级别
+    set_client_isolation_level(context, new_level);
+    
+    response->set_success(true);
+    response->set_previous_level(IsolationLevelUtils::toString(old_level));
+    response->set_current_level(IsolationLevelUtils::toString(new_level));
+    
+    return grpc::Status::OK;
+}
+
+
+grpc::Status KVStoreServiceImpl::GetIsolationLevel(grpc::ServerContext* context,
+                                const GetIsolationLevelRequest* request,
+                                GetIsolationLevelResponse* response) {
+
+    auto level = get_client_isolation_level(context);
+    response->set_success(true);
+    response->set_level(IsolationLevelUtils::toString(level));
     return grpc::Status::OK;
 }
 

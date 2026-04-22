@@ -1,4 +1,5 @@
 #include "transaction.h"
+#include "mvcc_kvstore.h"
 #include <random>
 #include <chrono>
 #include <iostream>
@@ -14,10 +15,15 @@ Transaction::Transaction(MVCCKVStore* kvstore, IsolationLevel level)
     txn_id = next_txn_id++;
     
     // 创建快照
-    snapshot = store->create_snapshot();
-    snapshot_version = snapshot->get_version();
+    if (isolation == IsolationLevel::REPEATABLE_READ || isolation == IsolationLevel::SNAPSHOT_ISOLATION || isolation == IsolationLevel::SERIALIZABLE) {
+        snapshot = store->create_snapshot();
+        snapshot_version = snapshot->get_version();
+    }
+    else {
+        snapshot_version = store->get_current_version();
+    }
     
-    std::cout << "[Transaction] Txn " << txn_id << " started, snapshot version: " << snapshot_version << std::endl;
+    std::cout << "[Transaction] Txn " << txn_id << " started, isolation: " << IsolationLevelUtils::toString(isolation) << ", snapshot version: " << snapshot_version << std::endl;
 }
 
 Transaction::~Transaction() {
@@ -241,8 +247,8 @@ bool Transaction::commit() {
             break;
             
         case IsolationLevel::SNAPSHOT_ISOLATION:
-            // 验证读写集合
-            valid = validate_read_set() && validate_write_set();
+            // 验证写集合
+            valid = validate_write_set();
             break;
             
         case IsolationLevel::SERIALIZABLE:
@@ -287,6 +293,23 @@ void Transaction::rollback() {
     
     state = State::ABORTED;
     std::cout << "[Transaction] Txn " << txn_id << " rolled back" << std::endl;
+}
+
+bool Transaction::set_isolation_level(IsolationLevel new_level) {
+    if (state != State::ACTIVE) {
+        std::cerr << "[Transaction] Cannot change isolation level in non-active state" << std::endl;
+        return false;
+    }
+    
+    if (write_set.size() > 0 || read_set.size() > 0) {
+        std::cerr << "[Transaction] Cannot change isolation level after operations" << std::endl;
+        return false;
+    }
+    
+    isolation = new_level;
+    std::cout << "[Transaction] Txn " << txn_id << " isolation level changed to " << IsolationLevelUtils::toString(isolation) << std::endl;
+    
+    return true;
 }
 
 // ============== TransactionManager 实现 ==============

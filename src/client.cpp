@@ -2,6 +2,7 @@
 #include "client.h"
 #include <sstream>
 #include <grpcpp/grpcpp.h>
+#include <iostream>
 
 namespace kvstore {
 
@@ -153,6 +154,7 @@ uint64_t KVClient::BeginTransaction(const std::string& isolation_level) {
     grpc::Status status = stub_->BeginTransaction(&context, request, &response);
     
     if (status.ok() && response.success()) {
+        std::cout << "[Client] Transaction started with isolation level: " << isolation_level << std::endl;
         return response.txn_id();
     }
     
@@ -273,6 +275,53 @@ bool KVClient::Ping() {
     }
     
     return false;
+}
+
+KVClient::IsolationLevelResult KVClient::SetIsolationLevel(const std::string& level) {
+    IsolationLevelResult result;
+    result.success = false;
+    
+    SetIsolationLevelRequest request;
+    
+    request.set_level(level);
+    std::cout << "new_level: " << level << std::endl;
+    
+    SetIsolationLevelResponse response;
+    grpc::ClientContext context;
+    
+    grpc::Status status = stub_->SetIsolationLevel(&context, request, &response);
+    
+    if (status.ok()) {
+        result.success = response.success();
+        result.level = response.current_level();
+        result.previous_level = response.previous_level();
+        result.error = response.error();
+    } else {
+        result.error = status.error_message();
+    }
+    
+    return result;
+}
+
+KVClient::IsolationLevelResult KVClient::GetIsolationLevel() {
+    IsolationLevelResult result;
+    result.success = false;
+    
+    GetIsolationLevelRequest request;
+    GetIsolationLevelResponse response;
+    grpc::ClientContext context;
+    
+    grpc::Status status = stub_->GetIsolationLevel(&context, request, &response);
+    
+    if (status.ok()) {
+        result.success = response.success();
+        result.level = response.level();
+        result.error = response.error();
+    } else {
+        result.error = status.error_message();
+    }
+    
+    return result;
 }
 
 } // namespace kvstore

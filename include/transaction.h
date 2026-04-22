@@ -1,6 +1,6 @@
 #pragma once
 #include "common.h"
-#include "mvcc_kvstore.h"
+// #include "mvcc_kvstore.h"
 #include <map>
 #include <vector>
 #include <mutex>
@@ -8,14 +8,9 @@
 
 namespace kvstore {
 
-// 隔离级别
-enum class IsolationLevel {
-    READ_UNCOMMITTED,   // 读未提交
-    READ_COMMITTED,     // 读已提交
-    REPEATABLE_READ,    // 可重复读
-    SNAPSHOT_ISOLATION, // 快照隔离（默认）
-    SERIALIZABLE        // 可串行化
-};
+// 前向声明，不需要包含完整头文件
+class MVCCKVStore;
+class Snapshot;
 
 // 操作类型
 enum class OpType {
@@ -42,6 +37,8 @@ struct ReadOp {
     ReadOp(const string& k, Version ver, const string& val)
         : key(k), version(ver), value(val) {}
 };
+
+class MVCCKVStore;
 
 // 事务类
 class Transaction {
@@ -84,9 +81,12 @@ private:
     bool acquire_locks();
     
 public:
-    Transaction(MVCCKVStore* kvstore, 
-                IsolationLevel level = IsolationLevel::SNAPSHOT_ISOLATION);
+    Transaction(MVCCKVStore* kvstore, IsolationLevel level = IsolationLevel::SNAPSHOT_ISOLATION);
     ~Transaction();
+
+    // 支持在事务内修改隔离级别（需要特殊处理）
+    bool set_isolation_level(IsolationLevel new_level);
+    IsolationLevel get_isolation_level() const { return isolation; }
     
     // 读写操作
     bool get(const string& key, string& value);
@@ -100,7 +100,6 @@ public:
     // 状态查询
     bool is_active() const { return state == State::ACTIVE; }
     uint64_t get_txn_id() const { return txn_id; }
-    IsolationLevel get_isolation_level() const { return isolation; }
 };
 
 // 事务管理器

@@ -1,4 +1,5 @@
 #pragma once
+#include "isolation_utils.h"
 #include <string>
 #include <cstdint>
 #include <vector>
@@ -29,6 +30,9 @@ enum class Status {
     IO_ERROR,
     INVALID_ARGUMENT
 };
+
+// 版本号类型（单调递增的时间戳）·
+using Version = uint64_t;
 
 // 配置
 struct Config {

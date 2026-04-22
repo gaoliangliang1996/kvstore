@@ -9,9 +9,6 @@
 
 namespace kvstore {
 
-// 版本号类型（单调递增的时间戳）·
-using Version = uint64_t;
-
 // 带版本号的 Value
 // VersionedValue 结构体表示一个带版本号的值，包含实际的 value、版本号和删除标记。deleted 字段用于标记该版本是否被删除，这样在读取时可以正确处理被删除的版本。
 struct VersionedValue {

@@ -52,10 +52,10 @@ set(SOURCES
     src/mvcc_sstable.cpp
     src/mvcc_kvstore.cpp
     src/transaction.cpp
-    src/server.cpp
-    src/client.cpp
-    ${PROTO_SRCS}
-    ${GRPC_SRCS}
+    # src/server.cpp
+    # src/client.cpp
+    # ${PROTO_SRCS}
+    # ${GRPC_SRCS}
 )
 
 # 静态库
@@ -75,31 +75,34 @@ target_link_libraries(parse_wal z)
 add_executable(parse_sstable tools/parse_sstable.cpp)
 target_link_libraries(parse_sstable z)
 
+add_executable(isolation_test test/isolation_test.cpp ${SOURCES})
+target_link_libraries(isolation_test Threads::Threads ${ZLIB_LIBRARIES})
+
 # 服务器
-add_executable(kvstore_server
-    server/server_main.cpp
-    src/server.cpp
-    ${SOURCES}
-    ${PROTO_SRCS}
-    ${GRPC_SRCS}
-)
-target_link_libraries(kvstore_server 
-    Threads::Threads
-    gRPC::grpc++
-    protobuf::libprotobuf
-)
+# add_executable(kvstore_server
+#     server/server_main.cpp
+#     src/server.cpp
+#     ${SOURCES}
+#     ${PROTO_SRCS}
+#     ${GRPC_SRCS}
+# )
+# target_link_libraries(kvstore_server 
+#     Threads::Threads
+#     gRPC::grpc++
+#     protobuf::libprotobuf
+# )
 
-# 客户端
-add_executable(kvstore_client
-    client/client_main.cpp
-    src/client.cpp
-    client/command_parser.cpp
-    ${PROTO_SRCS}
-    ${GRPC_SRCS}
-)
+# # 客户端
+# add_executable(kvstore_client
+#     client/client_main.cpp
+#     src/client.cpp
+#     client/command_parser.cpp
+#     ${PROTO_SRCS}
+#     ${GRPC_SRCS}
+# )
 
-target_link_libraries(kvstore_client 
-    Threads::Threads
-    gRPC::grpc++
-    protobuf::libprotobuf
-)
+# target_link_libraries(kvstore_client 
+#     Threads::Threads
+#     gRPC::grpc++
+#     protobuf::libprotobuf
+# )

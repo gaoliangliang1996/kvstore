@@ -34,6 +34,10 @@ service KVStoreService {
     rpc BeginTransaction(BeginTxnRequest) returns (BeginTxnResponse);
     rpc CommitTransaction(CommitTxnRequest) returns (CommitTxnResponse);
     rpc RollbackTransaction(RollbackTxnRequest) returns (RollbackTxnResponse);
+
+    // 隔离级别管理
+    rpc SetIsolationLevel(SetIsolationLevelRequest) returns (SetIsolationLevelResponse);
+    rpc GetIsolationLevel(GetIsolationLevelRequest) returns (GetIsolationLevelResponse);
     
     // 管理操作
     rpc Flush(FlushRequest) returns (FlushResponse);
@@ -157,6 +161,27 @@ message RollbackTxnRequest {
 message RollbackTxnResponse {
     bool success = 1;
     string error = 2;
+}
+
+// 隔离级别相关消息
+message SetIsolationLevelRequest {
+    string level = 1;  // READ_UNCOMMITTED, READ_COMMITTED, REPEATABLE_READ, SNAPSHOT_ISOLATION, SERIALIZABLE
+}
+
+message SetIsolationLevelResponse {
+    bool success = 1;
+    string error = 2;
+    string previous_level = 3;
+    string current_level = 4;
+}
+
+message GetIsolationLevelRequest {
+}
+
+message GetIsolationLevelResponse {
+    bool success = 1;
+    string level = 2;
+    string error = 3;
 }
 
 // 管理操作

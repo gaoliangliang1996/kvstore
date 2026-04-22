@@ -630,4 +630,35 @@ MVCCKVStore::BatchWriteResult MVCCKVStore::BatchDelete(const std::vector<string>
     return BatchWrite(batch);
 }
 
+// 事务创建（使用当前默认隔离级别）
+std::unique_ptr<Transaction> MVCCKVStore::begin_transaction() {
+    return begin_transaction(default_isolation_level_);
+}
+
+std::unique_ptr<Transaction> MVCCKVStore::begin_transaction(IsolationLevel level) {
+    auto txn = std::make_unique<Transaction>(this, level);
+
+    std::cout << "[MVCCKVStore] Transaction created with isolation level: ";
+    switch (level) {
+        case IsolationLevel::READ_UNCOMMITTED:
+            std::cout << "READ_UNCOMMITTED";
+            break;
+        case IsolationLevel::READ_COMMITTED:
+            std::cout << "READ_COMMITTED";
+            break;
+        case IsolationLevel::REPEATABLE_READ:
+            std::cout << "REPEATABLE_READ";
+            break;
+        case IsolationLevel::SNAPSHOT_ISOLATION:
+            std::cout << "SNAPSHOT_ISOLATION";
+            break;
+        case IsolationLevel::SERIALIZABLE:
+            std::cout << "SERIALIZABLE";
+            break;
+    }
+    
+    std::cout << std::endl;
+    return txn;
+}
+
 } // namespace kvstore

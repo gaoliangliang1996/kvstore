@@ -5,6 +5,7 @@
 #include "wal.h"
 #include "write_batch.h"
 #include "logger.h"
+#include "transaction.h"
 #include <memory>
 #include <vector>
 #include <atomic>
@@ -61,6 +62,8 @@ private:
     // 快照管理
     mutable std::mutex snapshot_mutex;
     std::vector<std::weak_ptr<Snapshot>> active_snapshots;
+
+    IsolationLevel default_isolation_level_ = IsolationLevel::SNAPSHOT_ISOLATION;
 
     struct KeyLock {
         uint64_t owner_txn;         // 锁的拥有者事务 ID
@@ -174,6 +177,15 @@ public:
 
     // 批量删除
     BatchWriteResult BatchDelete(const std::vector<string>& keys);
+
+    // 隔离级别管理
+    IsolationLevel get_default_isolation_level() const { return default_isolation_level_; }
+    void set_default_isolation_level(IsolationLevel level) { default_isolation_level_ = level; }
+    
+    // 事务创建（使用当前默认隔离级别）
+    std::unique_ptr<Transaction> begin_transaction();
+    // 事务创建（指定隔离级别）
+    std::unique_ptr<Transaction> begin_transaction(IsolationLevel level);
 };
 
 } // namespace kvstore
