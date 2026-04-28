@@ -78,6 +78,9 @@ target_link_libraries(parse_sstable z)
 add_executable(isolation_test test/isolation_test.cpp ${SOURCES})
 target_link_libraries(isolation_test Threads::Threads ${ZLIB_LIBRARIES})
 
+add_executable(lock_test test/lock_test.cpp ${SOURCES})
+target_link_libraries(lock_test Threads::Threads ${ZLIB_LIBRARIES})
+
 # 服务器
 # add_executable(kvstore_server
 #     server/server_main.cpp

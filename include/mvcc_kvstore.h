@@ -5,13 +5,15 @@
 #include "wal.h"
 #include "write_batch.h"
 #include "logger.h"
-#include "transaction.h"
 #include <memory>
 #include <vector>
 #include <atomic>
 #include <condition_variable>
 
 namespace kvstore {
+
+class Transaction;
+class TransactionManager;
 
 class RangeIterator {
 private:
@@ -186,6 +188,18 @@ public:
     std::unique_ptr<Transaction> begin_transaction();
     // 事务创建（指定隔离级别）
     std::unique_ptr<Transaction> begin_transaction(IsolationLevel level);
+
+    // 用于 READ_UNCOMMITTED 读取未提交的数据
+    bool get_uncommitted(const string& key, string& value);
+    // 获取当前活跃事务的写集合
+    bool get_from_active_transactions(const string& key, string& value);
+    // 注册/注销活跃事务
+    void register_transaction(uint64_t txn_id, Transaction* txn);
+    void unregister_transaction(uint64_t txn_id);
+private:
+    // 活跃事务的写集合（用于 READ_UNCOMMITTED）
+    std::map<uint64_t, Transaction*> active_transactions_; // txn_id -> Transaction*
+    std::mutex active_txn_mutex_;
 };
 
 } // namespace kvstore

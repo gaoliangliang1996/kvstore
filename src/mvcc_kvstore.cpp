@@ -1,5 +1,6 @@
 // src/mvcc_kvstore.cpp
 #include "mvcc_kvstore.h"
+#include "transaction.h"
 #include <filesystem>
 #include <algorithm>
 #include <chrono>
@@ -525,18 +526,10 @@ void MVCCKVStore::unlock_key(const string& key, uint64_t txn_id) {
 // 检查键是否在指定版本后被修改
 bool MVCCKVStore::is_key_modified_after(const string& key, Version version) {
     // 检查 key 是否在指定版本后被修改
-    string value;
     Version current_version = memtable->get_current_version();
     
     // 如果 当前版本 大于 快照版本，说明可能有修改
-    if (current_version > version) {
-        // 需要检查实际是否修改
-        // 这里简化处理：返回 true 表示有修改
-        // 实际应该检查 WAL 或版本历史
-        return true;
-    }
-    
-    return false;
+    return current_version > version;
 }
 
 MVCCKVStore::BatchWriteResult MVCCKVStore::BatchWrite(const WriteBatch& batch) {
@@ -636,7 +629,7 @@ std::unique_ptr<Transaction> MVCCKVStore::begin_transaction() {
 }
 
 std::unique_ptr<Transaction> MVCCKVStore::begin_transaction(IsolationLevel level) {
-    auto txn = std::make_unique<Transaction>(this, level);
+    auto txn = std::make_unique<Transaction>(this, level, 0);
 
     std::cout << "[MVCCKVStore] Transaction created with isolation level: ";
     switch (level) {
@@ -659,6 +652,41 @@ std::unique_ptr<Transaction> MVCCKVStore::begin_transaction(IsolationLevel level
     
     std::cout << std::endl;
     return txn;
+}
+
+bool MVCCKVStore::get_uncommitted(const string& key, string& value) {
+    // 先检查活跃事务的写集合
+    if (get_from_active_transactions(key, value)) {
+        return true;
+    }
+    // 否则读取已提交的数据
+    return get(key, value, 0);
+}
+
+bool MVCCKVStore::get_from_active_transactions(const string& key, string& value) {
+    std::lock_guard<std::mutex> lock(active_txn_mutex_);
+    
+    // 从最新的活跃事务开始查找（后开始的事务优先级更高）
+    for (auto it = active_transactions_.rbegin(); it != active_transactions_.rend(); ++it) {
+        Transaction* txn = it->second;
+        if (txn && txn->IsActive()) {
+            // 检查事务的写集合
+            if (txn->GetWriteSetValue(key, value)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+void MVCCKVStore::register_transaction(uint64_t txn_id, Transaction* txn) {
+    std::lock_guard<std::mutex> lock(active_txn_mutex_);
+    active_transactions_[txn_id] = txn;
+}
+
+void MVCCKVStore::unregister_transaction(uint64_t txn_id) {
+    std::lock_guard<std::mutex> lock(active_txn_mutex_);
+    active_transactions_.erase(txn_id);
 }
 
 } // namespace kvstore
