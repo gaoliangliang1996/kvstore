@@ -382,7 +382,7 @@ bool SSTable::del(const string& key) {
 }
 
 // 从 MemTable 构建 SSTable
-SSTable* SSTable::createFromMemTable(const string& path, std::map<string, string>& data) {
+SSTable* SSTable::createFromMemTable(const string& path, std::map<string, string, NaturalLess>& data) {
     SSTable* sstable = new SSTable(path);
     
     // 写入所有数据

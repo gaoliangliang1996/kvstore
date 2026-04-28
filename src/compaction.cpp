@@ -282,7 +282,7 @@ void Compaction::write_new_sstable(int level, std::vector<std::pair<string, stri
                       + "_" + std::to_string(file_id++) + ".sst";
     
     // 使用 map 构造数据并创建 SSTable
-    std::map<string, string> data_map(data.begin(), data.end());
+    std::map<string, string, NaturalLess> data_map(data.begin(), data.end());
     std::unique_ptr<SSTable> new_sst = std::unique_ptr<SSTable>(
         SSTable::createFromMemTable(filename, data_map)
     );

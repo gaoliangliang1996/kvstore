@@ -46,6 +46,7 @@ MVCCSSTable* MVCCSSTable::createFromVersionedData(
     }
     
     sstable->set_version_range(min_ver, max_ver);
+    sstable->buildBloomFilter();
     
     return sstable;
 }

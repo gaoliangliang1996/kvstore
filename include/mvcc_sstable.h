@@ -9,7 +9,6 @@ class MVCCSSTable : public SSTable {
 private:
     Version min_version;   // 该 SSTable 中最小的版本号
     Version max_version;   // 该 SSTable 中最大的版本号
-    std::unique_ptr<BloomFilter> bloom_filter;
     
 public:
     MVCCSSTable(const string& path);
@@ -27,6 +26,10 @@ public:
     bool may_contain_version(Version snap_ver) const {
         return snap_ver >= min_version;
     }
+
+    bool may_contain_key(const string& key) const {
+        return mayContain(key);
+    }
     
     // 从带版本的数据创建 SSTable
     static MVCCSSTable* createFromVersionedData(
@@ -35,6 +38,18 @@ public:
         Version min_ver,
         Version max_ver
     );
+
+    void set_bloom_filter(std::unique_ptr<BloomFilter> filter) {
+        setBloomFilter(std::move(filter));
+    }
+    
+    const BloomFilter* get_bloom_filter() const {
+        return getBloomFilter();
+    }
+
+    bool hasBloomFilter() const {
+        return getBloomFilter() != nullptr;
+    }
 };
 
 } // namespace kvstore

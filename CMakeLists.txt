@@ -81,6 +81,10 @@ target_link_libraries(isolation_test Threads::Threads ${ZLIB_LIBRARIES})
 add_executable(lock_test test/lock_test.cpp ${SOURCES})
 target_link_libraries(lock_test Threads::Threads ${ZLIB_LIBRARIES})
 
+add_executable(cache_bloom_test test/cache_bloom_test.cpp)
+target_link_libraries(cache_bloom_test kvstore ${ZLIB_LIBRARIES} pthread)
+
+
 # 服务器
 # add_executable(kvstore_server
 #     server/server_main.cpp

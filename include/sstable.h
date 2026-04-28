@@ -35,10 +35,6 @@ private:
 
     void buildIndex();
     uint64_t writeData(const string& data);
-
-    void buildBloomFilter();
-    void writeBloomFilter();
-    void readBloomFilter();
 public:
     SSTable(const string& path);
     ~SSTable();
@@ -47,8 +43,12 @@ public:
     bool get(const string& key, string& value) const;
     bool del(const string& key);
 
+    void buildBloomFilter();
+    void writeBloomFilter();
+    void readBloomFilter();
+
     // 从 MemTable 构建 SSTable 
-    static SSTable* createFromMemTable(const string& path, std::map<string, string>& data);
+    static SSTable* createFromMemTable(const string& path, std::map<string, string, NaturalLess>& data);
 
     size_t size() const {
         return keys.size();

@@ -60,7 +60,7 @@ public:
         if (versions.empty()) return 0;
         return versions.rbegin()->first;
     }
-    
+
     // 清理旧版本（GC）, 保留 >= min_keep_version 的版本
     void cleanup_old_versions(Version min_keep_version) { // min_keep_version 是要保留的最小版本号，小于这个版本的都可以删除
         auto it = versions.begin();

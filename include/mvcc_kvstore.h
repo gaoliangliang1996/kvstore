@@ -5,6 +5,8 @@
 #include "wal.h"
 #include "write_batch.h"
 #include "logger.h"
+#include "lru_cache.h"
+#include "bloom_filter.h"
 #include <memory>
 #include <vector>
 #include <atomic>
@@ -56,6 +58,7 @@ private:
     std::vector<std::shared_ptr<MVCCSSTable>> sstables;
     std::unique_ptr<WAL> wal;
     std::unique_ptr<Logger> logger;
+    std::unique_ptr<LRUCache> cache_;
     
     std::mutex flush_mutex;
     std::atomic<bool> running;
@@ -83,6 +86,7 @@ private:
     
     void flushImmutableMemtable();
     bool getFromSSTables(const string& key, string& value, Version snap_ver);
+    bool getFromSSTablesWithBloom(const string& key, string& value, Version snap_ver);
     void cleanupOldSnapshots();
     Version getMinActiveSnapshotVersion();
 
@@ -142,6 +146,9 @@ public:
         size_t active_snapshots;
         Version current_version;
         bool flushing;
+        size_t cache_hits;
+        size_t cache_misses;
+        double cache_hit_rate;
     };
     Stats get_stats() const;
     
@@ -196,6 +203,14 @@ public:
     // 注册/注销活跃事务
     void register_transaction(uint64_t txn_id, Transaction* txn);
     void unregister_transaction(uint64_t txn_id);
+
+    // 缓存管理
+    LRUCache* GetCache() { return cache_.get(); }
+    void SetCacheSize(size_t max_size);
+    void ClearCache();
+    LRUCache::Stats GetCacheStats() const;
+    void ClearCacheStats();
+
 private:
     // 活跃事务的写集合（用于 READ_UNCOMMITTED）
     std::map<uint64_t, Transaction*> active_transactions_; // txn_id -> Transaction*

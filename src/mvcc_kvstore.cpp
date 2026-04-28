@@ -57,11 +57,14 @@ MVCCKVStore::MVCCKVStore(const Config& cfg)
               });
     
     LOG_INFO("MVCC KVStore started successfully");
+
+    // 初始化 LRU Cache
+    cache_ = std::make_unique<LRUCache>(100 * 1024 * 1024);
 }
 
 MVCCKVStore::~MVCCKVStore() {
     running = false;
-    
+
     while (is_flushing) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -69,6 +72,25 @@ MVCCKVStore::~MVCCKVStore() {
     sync();
     LOG_INFO("MVCC KVStore shutdown");
     delete g_logger;
+}
+
+void MVCCKVStore::SetCacheSize(size_t max_size) {
+    cache_ = std::make_unique<LRUCache>(max_size);
+    LOG_INFO("Cache size set to " + std::to_string(max_size) + " bytes");
+}
+
+void MVCCKVStore::ClearCache() {
+    cache_->clear();
+    cache_->reset_stats();
+    LOG_INFO("Cache cleared");
+}
+
+LRUCache::Stats MVCCKVStore::GetCacheStats() const {
+    return cache_->get_stats();
+}
+
+void MVCCKVStore::ClearCacheStats() {
+    cache_->reset_stats();
 }
 
 Version MVCCKVStore::put(const string& key, const string& value) {
@@ -83,8 +105,11 @@ Version MVCCKVStore::put(const string& key, const string& value) {
     
     // 2. 写 MemTable（返回版本号）
     Version ver = memtable->put(key, value);
+
+    // 3. 更新缓存（写穿透）
+    cache_->put(key, value);
     
-    // 3. 检查是否需要切换 MemTable
+    // 4. 检查是否需要切换 MemTable
     if (memtable->need_switch(config.memtable_size) && !is_flushing) {
         flush_async();
     }
@@ -102,6 +127,9 @@ Version MVCCKVStore::del(const string& key) {
     }
     
     Version ver = memtable->del(key);
+
+    // 从缓存中删除
+    cache_->del(key);
     
     if (memtable->need_switch(config.memtable_size) && !is_flushing) {
         flush_async();
@@ -116,17 +144,44 @@ bool MVCCKVStore::get(const string& key, string& value, Version snap_ver) {
     if (snap_ver == 0) {
         snap_ver = memtable->get_current_version();
     }
+
+    // 0. 先查缓存
+    if (cache_->get(key, value)) {
+        return true;
+    }
     
     // 1. 先查 MemTable（包括 active 和 immutable）
     if (memtable->get(key, value, snap_ver)) {
         return true;
     }
-    
-    // 2. 查 SSTable
-    if (getFromSSTables(key, value, snap_ver)) {
+
+    // 2. 查 SSTable（使用 Bloom Filter 优化）
+    if (getFromSSTablesWithBloom(key, value, snap_ver)) {
+        cache_->put(key, value);
         return true;
     }
     
+    return false;
+}
+
+bool MVCCKVStore::getFromSSTablesWithBloom(const string& key, string& value, Version snap_ver) {
+    // 使用 Bloom Filter 优化 SSTable 查询
+    for (auto& sst : sstables) {
+        // 第一层过滤：版本范围
+        if (!sst->may_contain_version(snap_ver)) {
+            continue;
+        }
+        
+        // 第二层过滤：Bloom Filter
+        if (!sst->may_contain_key(key)) {
+            continue;
+        }
+        
+        // 第三层：实际查找
+        if (sst->get(key, value)) {
+            return true;
+        }
+    }
     return false;
 }
 
@@ -470,6 +525,11 @@ MVCCKVStore::Stats MVCCKVStore::get_stats() const {
     stats.sstable_count = sstables.size();
     stats.current_version = memtable->get_current_version();
     stats.flushing = is_flushing.load();
+
+    auto cache_stats = cache_->get_stats();
+    stats.cache_hits = cache_stats.hits;
+    stats.cache_misses = cache_stats.misses;
+    stats.cache_hit_rate = cache_stats.hit_rate();
     
     {
         std::lock_guard<std::mutex> lock(snapshot_mutex);
