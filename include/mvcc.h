@@ -32,24 +32,22 @@ struct VersionedValue {
 class MVCCNode { 
 public:
     string key;
-    // 使用 std::map，默认升序，但我们需要降序访问，所以存储时用升序，访问时反向迭代
-    std::map<Version, VersionedValue> versions; // version -> VersionedValue
+    std::map<Version, VersionedValue, std::greater<Version>> versions; // version -> VersionedValue  版本降序
     
     MVCCNode(const string& k) : key(k) {}
     
     void add_version(Version ver, const string& val, bool deleted = false) {
         versions[ver] = VersionedValue(val, ver, deleted);
     }
-    
-    bool get_value(Version snapshot_ver, string& value) const { // snapshot_ver 是读取时指定的快照版本
-        // 反向遍历版本，找到第一个版本号小于等于 snapshot_ver 的条目
-        for (auto it = versions.rbegin(); it != versions.rend(); ++it) {
-            if (it->first <= snapshot_ver) { // 找到第一个版本号小于等于快照版本 snapshot_ver 的条目
-                if (!it->second.deleted) {
-                    value = it->second.value;
+
+    bool get_value(Version snapshot_ver, string& value) const {
+        for (const auto& [ver, vv] : versions) {
+            if (ver <= snapshot_ver) {
+                if (!vv.deleted) {
+                    value = vv.value;
                     return true;
                 }
-                return false;  // 找到删除标记
+                return false;
             }
         }
         return false;
@@ -58,23 +56,25 @@ public:
     // 获取最新版本号
     Version get_latest_version() const {
         if (versions.empty()) return 0;
-        return versions.rbegin()->first;
+        return versions.begin()->first;
     }
 
     // 清理旧版本（GC）, 保留 >= min_keep_version 的版本
-    void cleanup_old_versions(Version min_keep_version) { // min_keep_version 是要保留的最小版本号，小于这个版本的都可以删除
+    size_t cleanup_old_versions(Version min_keep_version) { // min_keep_version 是要保留的最小版本号，小于这个版本的都可以删除
+        size_t removed = 0;
         auto it = versions.begin();
         while (it != versions.end()) {
             if (it->first < min_keep_version) {
                 it = versions.erase(it);
+                removed++;
             } else {
                 ++it;
             }
         }
+        return removed;
     }
 
-    size_t size() const { return versions.size(); }
-    bool empty() const { return versions.empty(); }
+    size_t version_count() const { return versions.size(); }
 };
 
 // MemTable 实现类（可读可写）
@@ -83,9 +83,10 @@ private:
     std::map<string, std::unique_ptr<MVCCNode>, NaturalLess> data;
     mutable std::shared_mutex mutex;
     size_t total_size;
+    size_t total_versions;
     
 public:
-    MemTableImpl() : total_size(0) {}
+    MemTableImpl() : total_size(0), total_versions(0) {}
     
     void put(const string& key, const string& value, Version version) {
         std::unique_lock<std::shared_mutex> lock(mutex);
@@ -99,6 +100,7 @@ public:
             it->second->add_version(version, value);
         }
         total_size += key.size() + value.size();
+        total_versions++;
     }
     
     void del(const string& key, Version version) {
@@ -113,6 +115,7 @@ public:
             it->second->add_version(version, "", true);
         }
         total_size += key.size();
+        total_versions++;
     }
     
     bool get(const string& key, string& value, Version snap_ver) const {
@@ -125,6 +128,66 @@ public:
         return it->second->get_value(snap_ver, value);
     }
     
+    // GC: 清理旧版本
+    struct GCStats {
+        size_t keys_processed = 0;
+        size_t versions_removed = 0;
+        size_t keys_removed = 0;
+        size_t bytes_freed = 0;
+    };
+
+    GCStats garbage_collect(Version min_keep_version) {
+        std::unique_lock<std::shared_mutex> lock(mutex);
+        
+        GCStats stats;
+        std::vector<string> keys_to_remove;
+        
+        for (auto& [key, node] : data) {
+            stats.keys_processed++;
+            
+            size_t before = node->version_count();
+            size_t removed = node->cleanup_old_versions(min_keep_version);
+            
+            if (removed > 0) {
+                stats.versions_removed += removed;
+                total_versions -= removed;
+                
+                // 估算释放的字节数
+                for (const auto& [ver, vv] : node->versions) {
+                    if (ver < min_keep_version) {
+                        stats.bytes_freed += key.size() + vv.value.size();
+                    }
+                }
+            }
+            
+            // 如果没有版本了，删除整个节点
+            if (node->version_count() == 0) {
+                keys_to_remove.push_back(key);
+            }
+        }
+        
+        // 删除空节点
+        for (const auto& key : keys_to_remove) {
+            auto it = data.find(key);
+            if (it != data.end()) {
+                stats.bytes_freed += key.size();
+                data.erase(it);
+                stats.keys_removed++;
+            }
+        }
+        
+        // 重新计算总大小
+        total_size = 0;
+        for (const auto& [key, node] : data) {
+            total_size += key.size();
+            for (const auto& [ver, vv] : node->versions) {
+                total_size += vv.value.size();
+            }
+        }
+        
+        return stats;
+    }
+
     // 获取所有数据（用于 flush）
     std::map<string, std::map<Version, VersionedValue>, NaturalLess> get_all_data() const {
         std::shared_lock<std::shared_mutex> lock(mutex);
@@ -147,6 +210,11 @@ public:
         std::shared_lock<std::shared_mutex> lock(mutex);
         return total_size;
     }
+
+    size_t total_versions_count() const {
+        std::shared_lock<std::shared_mutex> lock(mutex);
+        return total_versions;
+    }
     
     bool empty() const {
         std::shared_lock<std::shared_mutex> lock(mutex);
@@ -157,6 +225,7 @@ public:
         std::unique_lock<std::shared_mutex> lock(mutex);
         data.clear();
         total_size = 0;
+        total_versions = 0;
     }
 
     // 获取范围内的 key
@@ -297,9 +366,8 @@ public:
         return active_memtable->size();
     }
     
-    size_t total_bytes() const {
-        return active_memtable->total_bytes();
-    }
+    size_t total_bytes() const { return active_memtable->total_bytes(); }
+    size_t total_versions() const { return active_memtable->total_versions_count(); }
     
     // 检查是否需要切换
     bool need_switch(size_t threshold) const {
@@ -321,12 +389,56 @@ public:
         return std::make_shared<Snapshot>(current_version.load());
     }
     
-    // 垃圾回收（清理旧版本）
-    void garbage_collect(Version min_keep_version) {
-        // 需要在 active 和 immutable 中都清理
-        active_memtable->get_all_data();  // 触发清理需要遍历
+    // GC: 清理 active 和 immutable 中的旧版本
+    struct GCStats {
+        size_t active_keys_processed = 0;
+        size_t active_versions_removed = 0;
+        size_t active_keys_removed = 0;
+        size_t active_bytes_freed = 0;
+        size_t immutable_keys_processed = 0;
+        size_t immutable_versions_removed = 0;
+        size_t immutable_keys_removed = 0;
+        size_t immutable_bytes_freed = 0;
+    };
+
+    GCStats garbage_collect(Version min_keep_version) {
+        GCStats stats;
+        
+        // 清理 active memtable
+        auto active_stats = active_memtable->garbage_collect(min_keep_version);
+        stats.active_keys_processed = active_stats.keys_processed;
+        stats.active_versions_removed = active_stats.versions_removed;
+        stats.active_keys_removed = active_stats.keys_removed;
+        stats.active_bytes_freed = active_stats.bytes_freed;
+        
+        // 清理 immutable memtable
+        std::shared_lock<std::shared_mutex> lock(mutex);
         if (immutable_memtable) {
-            // immutable 的清理
+            auto immutable_stats = immutable_memtable->garbage_collect(min_keep_version);
+            stats.immutable_keys_processed = immutable_stats.keys_processed;
+            stats.immutable_versions_removed = immutable_stats.versions_removed;
+            stats.immutable_keys_removed = immutable_stats.keys_removed;
+            stats.immutable_bytes_freed = immutable_stats.bytes_freed;
+        }
+        
+        return stats;
+    }
+
+    // 获取统计信息
+    void get_stats(size_t& active_keys, size_t& active_versions, size_t& active_bytes, size_t& immutable_keys, size_t& immutable_versions, size_t& immutable_bytes) const {
+        active_keys = active_memtable->size();
+        active_versions = active_memtable->total_versions_count();
+        active_bytes = active_memtable->total_bytes();
+        
+        std::shared_lock<std::shared_mutex> lock(mutex);
+        if (immutable_memtable) {
+            immutable_keys = immutable_memtable->size();
+            immutable_versions = immutable_memtable->total_versions_count();
+            immutable_bytes = immutable_memtable->total_bytes();
+        } else {
+            immutable_keys = 0;
+            immutable_versions = 0;
+            immutable_bytes = 0;
         }
     }
     

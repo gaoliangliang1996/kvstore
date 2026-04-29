@@ -481,7 +481,7 @@ Version MVCCKVStore::getMinActiveSnapshotVersion() {
             it = active_snapshots.erase(it);
             continue;
         }
-        min_version = std::min(min_version, snapshot->get_version());
+        min_version = std::min(min_version, snapshot->get_version()); // 获取所有快照中最小的版本号
         ++it;
     }
     
@@ -501,14 +501,14 @@ void MVCCKVStore::cleanupOldSnapshots() {
     }
 }
 
-void MVCCKVStore::garbage_collect() {
-    LOG_INFO("Running garbage collection...");
+// void MVCCKVStore::garbage_collect() {
+//     LOG_INFO("Running garbage collection...");
     
-    Version min_keep = getMinActiveSnapshotVersion();
-    memtable->garbage_collect(min_keep);
+//     Version min_keep = getMinActiveSnapshotVersion();
+//     memtable->garbage_collect(min_keep);
     
-    LOG_INFO("Garbage collection completed");
-}
+//     LOG_INFO("Garbage collection completed");
+// }
 
 void MVCCKVStore::sync() {
     if (wal) {
@@ -747,6 +747,230 @@ void MVCCKVStore::register_transaction(uint64_t txn_id, Transaction* txn) {
 void MVCCKVStore::unregister_transaction(uint64_t txn_id) {
     std::lock_guard<std::mutex> lock(active_txn_mutex_);
     active_transactions_.erase(txn_id);
+}
+
+// ============== GC 实现 ==============
+
+MVCCKVStore::GCStats MVCCKVStore::garbage_collect() {
+    GCStats stats;
+    
+    std::cout << "\n[GC] Starting garbage collection..." << std::endl;
+    
+    // 获取 GC 前的统计信息
+    auto before_stats = get_detailed_stats();
+    stats.total_keys_before = before_stats.total_keys;
+    stats.total_versions_before = before_stats.total_versions;
+    stats.total_bytes_before = before_stats.total_bytes;
+    
+    std::cout << "[GC] Before: " << stats.total_keys_before << " keys, " << stats.total_versions_before << " versions, " << stats.total_bytes_before << " bytes" << std::endl;
+    
+    // 1. 获取最小活跃快照版本
+    Version min_keep_version = getMinActiveSnapshotVersion();
+    std::cout << "[GC] Min keep version: " << min_keep_version << std::endl;
+    
+    // 2. 清理 MemTable
+    auto memtable_stats = memtable->garbage_collect(min_keep_version);
+    stats.memtable_active_keys_processed = memtable_stats.active_keys_processed;
+    stats.memtable_active_versions_removed = memtable_stats.active_versions_removed;
+    stats.memtable_active_keys_removed = memtable_stats.active_keys_removed;
+    stats.memtable_active_bytes_freed = memtable_stats.active_bytes_freed;
+    stats.memtable_immutable_keys_processed = memtable_stats.immutable_keys_processed;
+    stats.memtable_immutable_versions_removed = memtable_stats.immutable_versions_removed;
+    stats.memtable_immutable_keys_removed = memtable_stats.immutable_keys_removed;
+    stats.memtable_immutable_bytes_freed = memtable_stats.immutable_bytes_freed;
+    
+    std::cout << "[GC] MemTable: removed " << stats.memtable_active_versions_removed << " versions from active, " << stats.memtable_immutable_versions_removed << " from immutable" << std::endl;
+    
+    // 3. 清理 SSTable
+    std::vector<std::shared_ptr<MVCCSSTable>> new_sstables;
+    
+    for (auto& sst : sstables) {
+        stats.sstables_processed++;
+        
+        // 如果整个 SSTable 的所有版本都太旧，完全删除
+        if (sst->get_max_version() < min_keep_version) {
+            size_t keys, versions;
+            sst->get_stats(keys, versions);
+            stats.sstable_versions_removed += versions;
+            stats.sstable_keys_removed += keys;
+            stats.sstable_files_deleted++;
+            
+            std::cout << "[GC] Deleting entire SSTable (max_version=" << sst->get_max_version() << " < " << min_keep_version << ")" << std::endl;
+            continue;
+        }
+        
+        // 如果 SSTable 的最小版本 >= min_keep_version，全部保留
+        if (sst->get_min_version() >= min_keep_version) {
+            new_sstables.push_back(sst);
+            continue;
+        }
+        
+        // 部分版本需要清理
+        auto sst_stats = sst->garbage_collect(min_keep_version);
+        stats.sstable_versions_removed += sst_stats.versions_removed;
+        stats.sstable_keys_removed += sst_stats.keys_removed;
+        
+        if (sst_stats.file_deleted) {
+            stats.sstable_files_deleted++;
+        } else {
+            new_sstables.push_back(sst);
+        }
+        
+        std::cout << "[GC] SSTable: removed " << sst_stats.versions_removed << " versions, " << sst_stats.keys_removed << " keys" << std::endl;
+    }
+    
+    sstables = std::move(new_sstables);
+    
+    // 4. 重新排序 SSTable
+    std::sort(sstables.begin(), sstables.end(),
+              [](const auto& a, const auto& b) {
+                  return a->get_max_version() > b->get_max_version();
+              });
+    
+    // 5. Compaction（可选）
+    auto compaction_stats = compact_sstables();
+    stats.sstable_versions_removed += compaction_stats.sstable_versions_removed;
+    stats.sstable_files_deleted += compaction_stats.sstable_files_deleted;
+    
+    // 6. 获取 GC 后的统计信息
+    auto after_stats = get_detailed_stats();
+    stats.total_keys_after = after_stats.total_keys;
+    stats.total_versions_after = after_stats.total_versions;
+    stats.total_bytes_after = after_stats.total_bytes;
+    
+    std::cout << "[GC] After: " << stats.total_keys_after << " keys, " << stats.total_versions_after << " versions, " << stats.total_bytes_after << " bytes" << std::endl;
+    std::cout << "[GC] Freed: " << (stats.total_bytes_before - stats.total_bytes_after) << " bytes, " << (stats.total_versions_before - stats.total_versions_after) << " versions" << std::endl;
+    
+    return stats;
+}
+
+MVCCKVStore::GCStats MVCCKVStore::compact_sstables() {
+    GCStats stats;
+    
+    // 如果 SSTable 数量太多，进行合并
+    if (sstables.size() <= 10) {
+        return stats;
+    }
+    
+    std::cout << "[GC] Compacting SSTables (count=" << sstables.size() << ")..." << std::endl;
+    
+    // 收集所有数据
+    std::map<string, std::map<Version, string, std::greater<Version>>> all_data;
+    Version new_min_version = UINT64_MAX;
+    Version new_max_version = 0;
+    
+    for (const auto& sst : sstables) {
+        const auto& data = sst->get_version_data();
+        for (const auto& [key, versions] : data) {
+            for (const auto& [ver, value] : versions) {
+                all_data[key][ver] = value;
+                new_min_version = std::min(new_min_version, ver);
+                new_max_version = std::max(new_max_version, ver);
+            }
+        }
+        stats.sstable_versions_removed += sst->get_version_data().size();
+        stats.sstable_files_deleted++;
+    }
+    
+    // 创建新的 SSTable
+    static int compact_id = 0;
+    string new_path = config.data_dir + "/compact_" + std::to_string(compact_id++) + ".sst";
+    
+    // 转换数据格式
+    std::map<string, std::map<Version, VersionedValue>, NaturalLess> versioned_data;
+    for (const auto& [key, versions] : all_data) {
+        for (const auto& [ver, value] : versions) {
+            versioned_data[key][ver] = VersionedValue(value, ver, false);
+        }
+    }
+    
+    auto new_sst = MVCCSSTable::createFromVersionedData(new_path, versioned_data, 
+                                                         new_min_version, new_max_version);
+    
+    // 替换旧的 SSTable
+    sstables.clear();
+    sstables.push_back(std::shared_ptr<MVCCSSTable>(new_sst));
+    
+    std::cout << "[GC] Compaction completed, created " << new_path << std::endl;
+    
+    return stats;
+}
+
+void MVCCKVStore::enable_auto_gc(bool enable, int interval_seconds) {
+    auto_gc_enabled_ = enable;
+    gc_interval_seconds_ = interval_seconds;
+    
+    if (enable && !gc_thread_.joinable()) {
+        gc_thread_ = std::thread(&MVCCKVStore::background_gc_worker, this);
+        std::cout << "[GC] Auto GC enabled, interval: " << interval_seconds << " seconds" << std::endl;
+    }
+}
+
+void MVCCKVStore::set_gc_threshold(size_t max_versions_per_key, size_t max_total_versions) {
+    max_versions_per_key_ = max_versions_per_key;
+    max_total_versions_ = max_total_versions;
+    std::cout << "[GC] Thresholds set: max_versions_per_key=" << max_versions_per_key << ", max_total_versions=" << max_total_versions << std::endl;
+}
+
+void MVCCKVStore::background_gc_worker() {
+    while (auto_gc_enabled_ && running) {
+        std::this_thread::sleep_for(std::chrono::seconds(gc_interval_seconds_));
+        
+        if (!running) break;
+        
+        // 检查是否需要 GC
+        auto stats = get_detailed_stats();
+        bool need_gc = false;
+        
+        if (stats.total_versions > max_total_versions_) {
+            need_gc = true;
+            std::cout << "[GC] Triggered: total versions (" << stats.total_versions 
+                      << ") exceeds threshold (" << max_total_versions_ << ")" << std::endl;
+        }
+        
+        if (need_gc) {
+            garbage_collect();
+        }
+    }
+}
+
+MVCCKVStore::DetailedStats MVCCKVStore::get_detailed_stats() const {
+    DetailedStats stats;
+    
+    // MemTable 统计
+    size_t active_keys, active_versions, active_bytes;
+    size_t immutable_keys, immutable_versions, immutable_bytes;
+    memtable->get_stats(active_keys, active_versions, active_bytes, immutable_keys, immutable_versions, immutable_bytes);
+    
+    stats.active_keys = active_keys;
+    stats.active_versions = active_versions;
+    stats.active_bytes = active_bytes;
+    stats.immutable_keys = immutable_keys;
+    stats.immutable_versions = immutable_versions;
+    stats.immutable_bytes = immutable_bytes;
+    
+    // SSTable 统计
+    stats.sstable_count = sstables.size();
+    stats.sstable_keys = 0;
+    stats.sstable_versions = 0;
+    
+    for (const auto& sst : sstables) {
+        size_t keys, versions;
+        sst->get_stats(keys, versions);
+        stats.sstable_keys += keys;
+        stats.sstable_versions += versions;
+    }
+    
+    // 总体统计
+    stats.total_keys = stats.active_keys + stats.immutable_keys + stats.sstable_keys;
+    stats.total_versions = stats.active_versions + stats.immutable_versions + stats.sstable_versions;
+    stats.total_bytes = stats.active_bytes + stats.immutable_bytes;
+    
+    stats.current_version = memtable->get_current_version();
+    stats.active_snapshots = active_snapshots.size();
+    stats.is_flushing = is_flushing.load();
+    
+    return stats;
 }
 
 } // namespace kvstore

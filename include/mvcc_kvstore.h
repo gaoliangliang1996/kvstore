@@ -11,6 +11,7 @@
 #include <vector>
 #include <atomic>
 #include <condition_variable>
+#include <thread>
 
 namespace kvstore {
 
@@ -132,7 +133,7 @@ public:
     bool get_is_flushing() const { return is_flushing.load(); }
     
     // 垃圾回收
-    void garbage_collect();
+    // void garbage_collect();
     
     // 同步
     void sync();
@@ -215,6 +216,71 @@ private:
     // 活跃事务的写集合（用于 READ_UNCOMMITTED）
     std::map<uint64_t, Transaction*> active_transactions_; // txn_id -> Transaction*
     std::mutex active_txn_mutex_;
+
+public:
+    struct GCStats {
+        // MemTable GC 统计
+        size_t memtable_active_keys_processed = 0;
+        size_t memtable_active_versions_removed = 0;
+        size_t memtable_active_keys_removed = 0;
+        size_t memtable_active_bytes_freed = 0;
+        size_t memtable_immutable_keys_processed = 0;
+        size_t memtable_immutable_versions_removed = 0;
+        size_t memtable_immutable_keys_removed = 0;
+        size_t memtable_immutable_bytes_freed = 0;
+        
+        // SSTable GC 统计
+        size_t sstables_processed = 0;
+        size_t sstable_versions_removed = 0;
+        size_t sstable_keys_removed = 0;
+        size_t sstable_files_deleted = 0;
+        
+        // 总体统计
+        size_t total_versions_before = 0;
+        size_t total_versions_after = 0;
+        size_t total_bytes_before = 0;
+        size_t total_bytes_after = 0;
+        size_t total_keys_before = 0;
+        size_t total_keys_after = 0;
+    };
+
+    // 手动 GC
+    GCStats garbage_collect();
+    
+    // 自动 GC 配置
+    void enable_auto_gc(bool enable, int interval_seconds = 60);
+    void set_gc_threshold(size_t max_versions_per_key = 10, size_t max_total_versions = 10000);
+    
+    // 获取统计信息
+    struct DetailedStats {
+        size_t active_keys;
+        size_t active_versions;
+        size_t active_bytes;
+        size_t immutable_keys;
+        size_t immutable_versions;
+        size_t immutable_bytes;
+        size_t sstable_count;
+        size_t sstable_keys;
+        size_t sstable_versions;
+        size_t total_keys;
+        size_t total_versions;
+        size_t total_bytes;
+        Version current_version;
+        size_t active_snapshots;
+        bool is_flushing;
+    };
+    DetailedStats get_detailed_stats() const;
+private:
+    // GC 相关成员
+    std::thread gc_thread_;
+    std::atomic<bool> auto_gc_enabled_{false};
+    std::atomic<int> gc_interval_seconds_{60};
+    std::atomic<size_t> max_versions_per_key_{10};
+    std::atomic<size_t> max_total_versions_{10000};
+    
+    void background_gc_worker();
+    GCStats compact_sstables();
+    void update_gc_stats(GCStats& stats);
 };
 
 } // namespace kvstore
