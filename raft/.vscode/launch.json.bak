@@ -1,0 +1,55 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        // ============== 调试 Server ==============
+        {
+            "name": "Debug KVStore Server",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/kvstore_server",
+            "args": [
+                "--addr", "0.0.0.0:50051",
+                "--data", "./data"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Build with CMake",
+            "miDebuggerPath": "/usr/bin/gdb"
+        },
+
+        // ============== 调试 Client ==============
+        {
+            "name": "Debug KVStore Client",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/kvstore_client",
+            "args": [
+                "--addr", "0.0.0.0:50051"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Build with CMake",
+            "miDebuggerPath": "/usr/bin/gdb"
+        },
+    ]
+}

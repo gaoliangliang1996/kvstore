@@ -1,38 +1,33 @@
 #pragma once
-
 #include "mvcc_kvstore.h"
-#include "raft.h"
-#include <queue>
-#include <unordered_map>
+#include "../raft/include/raft.h"
+#include <memory>
 
 namespace kvstore {
 
 class RaftKVStore : public MVCCKVStore {
-private:
-    std::unique_ptr<RaftNode> raft_node;
-    std::unordered_map<uint64_t, std::pair<string, string>> pending_proposals;
-    std::mutex pending_mutex;
-    std::condition_variable pending_cv;
-    int node_id;
-    
-    void on_log_applied(const RaftLogEntry& entry);
-    
 public:
-    RaftKVStore(const Config& cfg, const RaftConfig& raft_cfg);
+    explicit RaftKVStore(const Config& cfg, const raft::RaftConfig& raft_cfg);
+    ~RaftKVStore() override;
     
-    ~RaftKVStore();
+    // 重写写操作（需要通过 Raft 共识）
+    Version put(const string& key, const string& value) override;
+    Version del(const string& key) override;
     
-    Version put(const string& key, const string& value);
+    // 读操作可以直接从本地读取
+    bool get(const string& key, string& value, Version snap_ver = 0) override;
     
-    Version del(const string& key);
+    // Raft 状态查询
+    bool IsLeader() const { return raft_->IsLeader(); }
+    std::string GetLeaderId() const { return raft_->GetLeaderId(); }
     
-    bool get(const string& key, string& value, Version snap_ver = 0);
+private:
+    std::unique_ptr<raft::Raft> raft_;
+    std::map<uint64_t, std::function<void(Version)>> pending_proposals_;
+    std::mutex pending_mutex_;
     
-    bool is_leader() const { return raft_node->is_leader(); }
-    
-    int get_leader_id() const { return raft_node->get_leader_id(); }
-    
-    bool wait_for_commit(uint64_t index, int timeout_ms = 5000);
+    void OnCommit(uint64_t index, const std::string& command, const std::vector<uint8_t>& data);
+    void OnLeaderChange(const std::string& leader_id);
 };
 
 } // namespace kvstore
