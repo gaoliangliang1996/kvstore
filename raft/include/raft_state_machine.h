@@ -1,3 +1,4 @@
+// raft/include/raft_state_machine.h
 #pragma once
 #include <functional>
 #include <memory>
@@ -8,21 +9,14 @@
 
 namespace raft {
 
-// 状态机接口（与 KVStore 集成）
+// 状态机接口
 class RaftStateMachine {
 public:
     virtual ~RaftStateMachine() = default;
     
-    // 应用命令
     virtual void Apply(const std::string& command, const std::vector<uint8_t>& data, uint64_t index) = 0;
-    
-    // 创建快照
     virtual std::vector<uint8_t> TakeSnapshot() = 0;
-    
-    // 恢复快照
     virtual void RestoreSnapshot(const std::vector<uint8_t>& data) = 0;
-    
-    // 获取状态大小
     virtual size_t GetStateSize() const = 0;
 };
 
@@ -37,7 +31,6 @@ public:
     void RestoreSnapshot(const std::vector<uint8_t>& data) override;
     size_t GetStateSize() const override;
     
-    // 读取操作（不需要共识）
     bool Get(const std::string& key, std::string& value) const;
     
 private:

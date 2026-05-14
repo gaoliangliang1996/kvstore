@@ -6,11 +6,10 @@
 #include <sstream>
 
 namespace raft {
-
 RaftNode::RaftNode(const RaftConfig& config)
     : config_(config),
       node_id_(config.node_id),
-      peer_ids_(config.peer_ids),
+      peer_ids_(config.GetPeerIds()),  // 修改这里
       current_term_(0),
       state_(NodeState::FOLLOWER),
       commit_index_(0),
@@ -19,7 +18,8 @@ RaftNode::RaftNode(const RaftConfig& config)
       gen_(rd_()),
       election_timeout_dist_(config.election_timeout_ms, config.election_timeout_ms * 2) {
     
-    std::cout << "[Raft] Initializing node " << node_id_ << std::endl;
+    std::cout << "[Raft] Initializing node " << node_id_ << " on port " 
+              << config.listen_port << std::endl;
     
     // 初始化组件
     persistence_ = std::make_unique<RaftPersistence>(config.data_dir);
@@ -32,10 +32,8 @@ RaftNode::RaftNode(const RaftConfig& config)
     
     // 初始化领导者状态
     for (const auto& peer : peer_ids_) {
-        if (peer != node_id_) {
-            next_index_[peer] = log_->GetLastLogIndex() + 1;
-            match_index_[peer] = 0;
-        }
+        next_index_[peer] = log_->GetLastLogIndex() + 1;
+        match_index_[peer] = 0;
     }
     
     // 设置传输层回调
@@ -44,6 +42,9 @@ RaftNode::RaftNode(const RaftConfig& config)
         [this](const AppendEntriesRequest& req) { return HandleAppendEntries(req); },
         [this](const InstallSnapshotRequest& req) { return HandleInstallSnapshot(req); }
     );
+    
+    // 初始化传输层（使用完整配置）
+    transport_->Initialize(config_);
     
     std::cout << "[Raft] Node " << node_id_ << " initialized" << std::endl;
 }
@@ -56,10 +57,11 @@ void RaftNode::Start() {
     if (running_) return;
     
     running_ = true;
-    transport_->Initialize(node_id_, peer_ids_);
+    
+    // 使用新的 Initialize 方法
+    transport_->Initialize(config_);
     transport_->Start();
     
-    // 启动选举定时器
     election_timer_ = std::make_unique<std::thread>(&RaftNode::RunElectionTimer, this);
     
     std::cout << "[Raft] Node " << node_id_ << " started" << std::endl;
@@ -543,14 +545,6 @@ void RaftNode::RecoverState() {
     
     std::cout << "[Raft] Node " << node_id_ << " recovered, term=" 
               << current_term_ << ", voted_for=" << voted_for_ << std::endl;
-}
-
-void RaftNode::SetLeaderChangeCallback(std::function<void(const std::string&)> callback) {
-    leader_change_callback_ = callback;
-}
-
-void RaftNode::SetCommitCallback(std::function<void(uint64_t, const std::string&, const std::vector<uint8_t>&)> callback) {
-    commit_callback_ = callback;
 }
 
 bool RaftNode::CheckLogMatch(uint64_t index, uint64_t term) const {

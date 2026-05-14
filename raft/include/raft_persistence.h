@@ -1,3 +1,4 @@
+// raft/include/raft_persistence.h
 #pragma once
 #include <string>
 #include <vector>
@@ -11,7 +12,6 @@ public:
     explicit RaftPersistence(const std::string& data_dir);
     ~RaftPersistence();
     
-    // 硬状态
     struct HardState {
         uint64_t term = 0;
         std::string voted_for;
@@ -24,17 +24,16 @@ public:
         }
     };
     
-    HardState GetHardState() const;             // 读取当前的 HardState
+    HardState GetHardState() const;
     void SetHardState(const HardState& state);
     
-    // 配置
-    std::vector<std::string> GetPeers() const;  // 读取集群节点列表
-    void SetPeers(const std::vector<std::string>& peers); // 更新集群节点列表并持久化
+    std::vector<std::string> GetPeers() const;
+    void SetPeers(const std::vector<std::string>& peers);
     
 private:
-    std::string data_dir_;              // 数据目录路径
-    HardState hard_state_;              // 内存中的硬状态缓存
-    std::vector<std::string> peers_;    // 内存中的集群配置
+    std::string data_dir_;
+    HardState hard_state_;
+    std::vector<std::string> peers_;
     mutable std::mutex mutex_;
     
     void Load();
