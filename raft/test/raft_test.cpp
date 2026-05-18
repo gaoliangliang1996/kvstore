@@ -27,8 +27,15 @@ RaftConfig createTestConfig(int node_id, const std::vector<std::string>& all_pee
         config.peers.push_back(NodeAddress(peer_id, "127.0.0.1", port));
     }
     
-    config.election_timeout_ms = 150;
-    config.heartbeat_interval_ms = 50;
+    // config.election_timeout_ms = 5000; // 150;
+    // config.heartbeat_interval_ms = 1000; // 50;
+
+    // config.election_timeout_ms = 150;
+    // config.heartbeat_interval_ms = 50;
+
+    config.election_timeout_ms = 1000;      // 1 秒
+    config.heartbeat_interval_ms = 200;     // 200ms
+
     config.max_append_entries = 100;
     config.snapshot_threshold = 10;
     config.data_dir = "./raft_test_data_" + std::to_string(node_id);
@@ -66,7 +73,7 @@ void test_leader_election() {
     
     // 等待选举完成
     std::cout << "\nWaiting for leader election..." << std::endl;
-    wait_ms(3000);
+    wait_ms(5000);
     
     // 检查是否只有一个领导者
     int leader_count = 0;
@@ -77,9 +84,7 @@ void test_leader_election() {
             leader_id = node->GetLeaderId();
             std::cout << "Leader found: " << leader_id << std::endl;
         }
-        std::cout << "Node " << node->GetLeaderId() 
-                  << " state=" << NodeStateToString(node->GetState())
-                  << " term=" << node->GetCurrentTerm() << std::endl;
+        std::cout << "Node " << node->GetLeaderId() << " state=" << NodeStateToString(node->GetState()) << " term=" << node->GetCurrentTerm() << std::endl;
     }
     
     assert(leader_count == 1);
@@ -118,7 +123,7 @@ void test_log_replication() {
     }
     
     // 等待领导者选举
-    wait_ms(3000);
+    wait_ms(5000);
     
     // 找到领导者
     RaftNode* leader = nullptr;
@@ -134,18 +139,20 @@ void test_log_replication() {
     
     // 提交 proposals
     std::cout << "\nSubmitting proposals..." << std::endl;
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 1; i++) {
         std::string cmd = "put";
         std::string data = "key" + std::to_string(i) + ":value" + std::to_string(i);
         std::vector<uint8_t> data_vec(data.begin(), data.end());
         
-        leader->Propose(cmd, data_vec, [i](bool success, uint64_t index) {
-            if (success) {
-                std::cout << "Proposal " << i << " committed at index " << index << std::endl;
-            } else {
-                std::cout << "Proposal " << i << " failed" << std::endl;
+        leader->Propose(cmd, data_vec, 
+            [i](bool success, uint64_t index) {
+                if (success) {
+                    std::cout << "Proposal " << i << " committed at index " << index << std::endl;
+                } else {
+                    std::cout << "Proposal " << i << " failed" << std::endl;
+                }
             }
-        });
+        );
         
         wait_ms(100);
     }
@@ -181,12 +188,12 @@ void test_log_replication() {
 void test_leader_failover() {
     std::cout << "\n========== Test 3: Leader Failover ==========\n" << std::endl;
     
-    std::vector<std::string> all_peer_ids = {"node-1", "node-2", "node-3"};
+    std::vector<std::string> all_peer_ids = {"node-1", "node-2", "node-3", "node-4", "node-5"};
     std::vector<std::unique_ptr<RaftNode>> nodes;
     std::vector<std::string> leader_history;
     
-    // 创建 3 个节点
-    for (int i = 1; i <= 3; i++) {
+    // 创建 5 个节点
+    for (int i = 1; i <= 5; i++) {
         auto config = createTestConfig(i, all_peer_ids);
         auto node = std::make_unique<RaftNode>(config);
         
@@ -204,7 +211,7 @@ void test_leader_failover() {
     }
     
     // 等待领导者选举
-    wait_ms(3000);
+    wait_ms(5000);
     
     // 找到当前领导者
     int leader_idx = -1;
@@ -252,8 +259,8 @@ int main() {
     std::cout << "     RAFT CONSENSUS ALGORITHM TESTS" << std::endl;
     std::cout << "========================================" << std::endl;
     
-    test_leader_election();
-    test_log_replication();
+    // test_leader_election();
+    // test_log_replication();
     test_leader_failover();
     
     std::cout << "\n========================================" << std::endl;

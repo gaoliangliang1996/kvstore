@@ -185,6 +185,27 @@ void RaftLog::Load() {
     LoadSnapshot();
 }
 
+/*
+    raft.log 格式
+
+    entries_count
+        Entry_1:
+            term
+            index
+            cmd_len
+            command
+            data_len
+            data
+        Entry_2:
+            term
+            index
+            cmd_len
+            command
+            data_len
+            data
+        ...
+*/
+
 void RaftLog::SaveToFile() {
     std::ofstream ofs(log_file_, std::ios::binary);
     if (!ofs.is_open()) {

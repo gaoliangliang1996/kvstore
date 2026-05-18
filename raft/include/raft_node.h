@@ -51,30 +51,35 @@ private:
     std::vector<std::string> peer_ids_;
     
     // 持久化状态
-    uint64_t current_term_;
-    std::string voted_for_;
-    std::unique_ptr<RaftLog> log_;
-    std::unique_ptr<RaftPersistence> persistence_;
+    uint64_t current_term_;         // 当前任期，严格单调递增
+    std::string voted_for_;         // 本任期投票给了谁
+    std::unique_ptr<RaftLog> log_;  // 日志存储 (entries + snapshot)
+    std::unique_ptr<RaftPersistence> persistence_;  // hard_state 读写
     
     // 易失性状态
-    NodeState state_;
-    std::string leader_id_;
-    uint64_t commit_index_;
-    uint64_t last_applied_;
+    NodeState state_;       // FOLLOWER/CANDIDATE/LEADER
+    std::string leader_id_; // 当前已知的 leader id
+    uint64_t commit_index_; // 已提交的最大日志索引
+    uint64_t last_applied_; // 已应用到状态机的最大索引 (≤ commit_index)
     
     // 领导者状态
-    std::map<std::string, uint64_t> next_index_;
-    std::map<std::string, uint64_t> match_index_;
+    std::map<std::string, uint64_t> next_index_;  // next_index_[peer] 下一次从哪条开始发送
+    std::map<std::string, uint64_t> match_index_; // next_index_[peer] 已确认复制到该 peer 的最大日志索引
     
     // 心跳和选举定时器
-    std::unique_ptr<std::thread> election_timer_;
-    std::unique_ptr<std::thread> heartbeat_timer_;
+    std::unique_ptr<std::thread> election_timer_; // 选举超时线程
+    std::unique_ptr<std::thread> heartbeat_timer_;// Leader 心跳线程
     std::atomic<bool> running_;
     
     // 随机数生成器
     std::random_device rd_;
     std::mt19937 gen_;
     std::uniform_int_distribution<> election_timeout_dist_;
+
+    std::mutex timer_mutex_;
+    std::condition_variable timer_cv_;
+    std::atomic<bool> timer_reset_{false};
+    void ResetElectionTimer();
     
     // 客户端请求队列
     struct PendingProposal {

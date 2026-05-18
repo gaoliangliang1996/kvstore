@@ -16,7 +16,7 @@ RaftNode::RaftNode(const RaftConfig& config)
       last_applied_(0),
       running_(false),
       gen_(rd_()),
-      election_timeout_dist_(config.election_timeout_ms, config.election_timeout_ms * 2) {
+      election_timeout_dist_(config.election_timeout_ms, config.election_timeout_ms * 3) {
     
     std::cout << "[Raft] Initializing node " << node_id_ << " on port " 
               << config.listen_port << std::endl;
@@ -44,7 +44,7 @@ RaftNode::RaftNode(const RaftConfig& config)
     );
     
     // 初始化传输层（使用完整配置）
-    transport_->Initialize(config_);
+    // transport_->Initialize(config_);
     
     std::cout << "[Raft] Node " << node_id_ << " initialized" << std::endl;
 }
@@ -85,43 +85,63 @@ void RaftNode::Stop() {
 void RaftNode::RunElectionTimer() {
     while (running_) {
         int timeout = election_timeout_dist_(gen_);
-        
-        // 分段睡眠，以便及时响应停止信号
-        for (int i = 0; i < timeout && running_; i += 10) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+        // 等待超时或被重置
+        {
+            std::unique_lock<std::mutex> lock(timer_mutex_);
+            timer_reset_ = false;
+            
+            // 等待条件变量，最多等待 timeout 毫秒
+            // no_timeout - 0, timeout - 1
+            auto status = timer_cv_.wait_for(
+                lock, 
+                std::chrono::milliseconds(timeout),
+                [this] { return timer_reset_.load() || !running_; }
+            );
+
+            // 如果是被重置触发的，继续循环（重新开始计时）
+            if (status && timer_reset_) {
+                continue;  // 收到心跳，重新开始计时
+            }
         }
         
         if (!running_) break;
         
         std::lock_guard<std::mutex> lock(mutex_);
         
-        // 只有 follower 才需要处理超时
+        // 超时
         if (state_ == NodeState::FOLLOWER && running_) {
             ProcessElectionTimeout();
         }
     }
 }
 
-void RaftNode::ProcessElectionTimeout() {
-    std::cout << "[Raft] Node " << node_id_ << " election timeout at term " 
-              << current_term_ << std::endl;
-    BecomeCandidate();
+// 收到心跳时调用
+void RaftNode::ResetElectionTimer() {
+    std::lock_guard<std::mutex> lock(timer_mutex_);
+    timer_reset_ = true;
+    timer_cv_.notify_one();  // 唤醒等待的线程
 }
 
-void RaftNode::BecomeCandidate() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    
+void RaftNode::ProcessElectionTimeout() {
+    std::cout << "[Raft] Node " << node_id_ << " election timeout at term " << current_term_ << std::endl;
+
+    if (state_ != NodeState::LEADER && running_)
+        BecomeCandidate();
+}
+
+void RaftNode::BecomeCandidate() {    
     state_ = NodeState::CANDIDATE;
     current_term_++;
     voted_for_ = node_id_;
     PersistState();
     
-    std::cout << "[Raft] Node " << node_id_ << " becomes candidate for term " 
-              << current_term_ << std::endl;
+    std::cout << "[Raft] Node " << node_id_ << " becomes candidate for term " << current_term_ << std::endl;
     
-    // 重置选举定时器
-    election_timeout_dist_ = std::uniform_int_distribution<>(
-        config_.election_timeout_ms, config_.election_timeout_ms * 2);
+    // // 重置选举定时器
+    // election_timeout_dist_ = std::uniform_int_distribution<>(
+    //     config_.election_timeout_ms, config_.election_timeout_ms * 3);
+    // ResetElectionTimer();
     
     // 请求投票
     RequestVoteRequest req;
@@ -130,15 +150,15 @@ void RaftNode::BecomeCandidate() {
     req.set_last_log_index(log_->GetLastLogIndex());
     req.set_last_log_term(log_->GetLastLogTerm());
     
-    int votes = 1;  // 自己投票
-    int total_peers = 0;
+    auto votes_ptr = std::make_shared<int>(1); // 自己投票
+    auto total_ptr = std::make_shared<int>(0);
     
     for (const auto& peer : peer_ids_) {
         if (peer == node_id_) continue;
-        total_peers++;
+        (*total_ptr)++;
         
         transport_->SendRequestVote(peer, req, 
-            [this, peer, &votes, total_peers](const RequestVoteResponse& resp) {
+            [this, peer, votes_ptr, total_ptr](const RequestVoteResponse& resp) {
                 std::lock_guard<std::mutex> lock(mutex_);
                 
                 if (resp.term() > current_term_) {
@@ -147,8 +167,19 @@ void RaftNode::BecomeCandidate() {
                 }
                 
                 if (resp.vote_granted() && state_ == NodeState::CANDIDATE) {
-                    votes++;
-                    if (votes > total_peers / 2) {
+                    (*votes_ptr)++;
+
+                    // std::cout << "[Raft] Node " << node_id_ 
+                    //         << " >>> GOT VOTE RESPONSE from " << peer 
+                    //         << ", term=" << resp.term() 
+                    //         << ", granted=" << resp.vote_granted()
+                    //         << ", current_term=" << current_term_
+                    //         << ", state=" << (int)state_
+                    //         << ", votes = " << votes << std::endl;
+
+                    int needed = (*total_ptr / 2) + 1;
+
+                    if ((*votes_ptr) > needed) {
                         BecomeLeader();
                     }
                 }
@@ -160,8 +191,7 @@ void RaftNode::BecomeLeader() {
     state_ = NodeState::LEADER;
     leader_id_ = node_id_;
     
-    std::cout << "[Raft] Node " << node_id_ << " becomes leader for term " 
-              << current_term_ << std::endl;
+    std::cout << "[Raft] Node " << node_id_ << " becomes leader for term " << current_term_ << std::endl;
     
     // 初始化领导者状态
     for (const auto& peer : peer_ids_) {
@@ -243,9 +273,11 @@ void RaftNode::SendAppendEntries(const std::string& peer_id) {
     }
     
     // 异步发送 + 回调处理
-    transport_->SendAppendEntries(peer_id, req, 
-        [this, peer_id, next_idx, entries_size = req.entries_size()]
-        (const AppendEntriesResponse& resp) {
+    transport_->SendAppendEntries(
+        peer_id, 
+        req, 
+        
+        [this, peer_id, next_idx, entries_size = req.entries_size()](const AppendEntriesResponse& resp) {
             std::lock_guard<std::mutex> lock(mutex_);
             
             if (resp.term() > current_term_) {
@@ -267,7 +299,8 @@ void RaftNode::SendAppendEntries(const std::string& peer_id) {
                 // 失败，回退 next_index_
                 next_index_[peer_id]--;
             }
-        });
+        }
+    );
 }
 
 void RaftNode::UpdateCommitIndex() {
@@ -331,13 +364,19 @@ void RaftNode::ApplyCommittedEntries() {
 }
 
 RequestVoteResponse RaftNode::HandleRequestVote(const RequestVoteRequest& req) {
+    if (!running_) {
+        RequestVoteResponse resp;
+        resp.set_term(current_term_);
+        resp.set_vote_granted(false);
+        return resp;
+    }
+
     std::lock_guard<std::mutex> lock(mutex_);
     
     RequestVoteResponse resp;
     resp.set_term(current_term_);
     
-    std::cout << "[Raft] Node " << node_id_ << " received RequestVote from " 
-              << req.candidate_id() << " term=" << req.term() << std::endl;
+    std::cout << "[Raft] Node " << node_id_ << " received RequestVote from " << req.candidate_id() << " term=" << req.term() << std::endl;
     
     // 拒绝低 term 请求
     if (req.term() < current_term_) {
@@ -373,7 +412,10 @@ RequestVoteResponse RaftNode::HandleRequestVote(const RequestVoteRequest& req) {
         
         // 重置选举定时器
         election_timeout_dist_ = std::uniform_int_distribution<>(
-            config_.election_timeout_ms, config_.election_timeout_ms * 2);
+            config_.election_timeout_ms, config_.election_timeout_ms * 3);
+
+        // 收到投票请求，重置选举定时器
+        ResetElectionTimer();
             
         std::cout << "[Raft] Node " << node_id_ << " voted for " << req.candidate_id() << std::endl;
     } else {
@@ -406,12 +448,15 @@ AppendEntriesResponse RaftNode::HandleAppendEntries(const AppendEntriesRequest& 
     
     leader_id_ = req.leader_id();
     election_timeout_dist_ = std::uniform_int_distribution<>(
-        config_.election_timeout_ms, config_.election_timeout_ms * 2);
+        config_.election_timeout_ms, config_.election_timeout_ms * 3);
+    
+    // 收到心跳，重置选举定时器
+    ResetElectionTimer();
     
     // 检查日志匹配
     if (req.prev_log_index() > 0) {
         auto entry = log_->GetEntry(req.prev_log_index());
-        if (entry.term() != req.prev_log_term()) {  // 使用 term()
+        if (entry.term() != req.prev_log_term()) {
             log_->TruncateFrom(req.prev_log_index());
             resp.set_success(false);
             return resp;

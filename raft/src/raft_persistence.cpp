@@ -4,6 +4,20 @@
 #include <iostream>
 #include <mutex>
 
+/*
+    hard_state_ 的存储格式
+
+    term      (8 bytes)             current_term 值
+    voted_len (4 bytes)             voter_for 字符串的长度
+    voter_for                       字符串内容
+    peers_len (4 bytes)             peers 数组长度
+    peer1_len (4 bytes)             第 1 个 peers 字符串长度
+    peer1                           第 1 个 peer 内容
+    peer2_len (4 bytes)             第 2 个 peers 字符串长度
+    peer2                           第 2 个 peer 内容
+    ...
+*/
+
 namespace raft {
 
 RaftPersistence::RaftPersistence(const std::string& data_dir) : data_dir_(data_dir) {
