@@ -124,7 +124,7 @@ endif()
 install(TARGETS raft DESTINATION lib)
 install(DIRECTORY ${RAFT_INCLUDE_DIR}/ DESTINATION include/raft)
 
-# 独立节点可执行文件
-add_executable(raft_node_main raft_node_main.cpp)
-target_link_libraries(raft_node_main raft ${gRPC_LIBRARIES} ${Protobuf_LIBRARIES} Threads::Threads)
-target_include_directories(raft_node_main PRIVATE ${RAFT_INCLUDE_DIR})
+# # 独立节点可执行文件
+# add_executable(raft_node_main raft_node_main.cpp)
+# target_link_libraries(raft_node_main raft ${gRPC_LIBRARIES} ${Protobuf_LIBRARIES} Threads::Threads)
+# target_include_directories(raft_node_main PRIVATE ${RAFT_INCLUDE_DIR})
